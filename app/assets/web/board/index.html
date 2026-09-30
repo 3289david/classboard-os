@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>교실 OS</title>
+<link rel="stylesheet" href="board.css">
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="school"><span class="name" id="t-school"></span><span class="chip accent" id="t-class"></span></div>
+    <div class="spacer"></div>
+    <div class="status" id="t-status"></div>
+    <div class="weather" id="t-weather"></div>
+    <div class="clock"><div class="time" id="t-time"></div><div class="date" id="t-date"></div></div>
+  </header>
+
+  <main>
+    <section class="view" id="v-home">
+      <div class="col col1">
+        <div class="card now" id="c-now"></div>
+        <div class="card"><h3><span id="tt-icon"></span><span id="tt-title">시간표</span><span class="right tabs" id="tt-tabs"><button data-d="0" class="on">오늘</button><button data-d="1">다음 수업일</button></span></h3><div class="body" id="c-tt"></div></div>
+      </div>
+      <div class="col col2">
+        <div class="card"><h3><span data-ic="megaphone"></span>학교 공지<span class="right" id="n-count"></span></h3><div class="body" id="c-notices"></div></div>
+        <div class="card"><h3><span data-ic="backpack"></span>준비물 / 과제</h3><div class="body" id="c-hw"></div></div>
+        <div class="card"><h3><span data-ic="exam"></span>시험 D-day</h3><div class="body" id="c-dday"></div></div>
+      </div>
+      <div class="col col3">
+        <div class="card meal"><h3><span data-ic="meal"></span><span id="meal-title">급식</span><span class="right tabs" id="meal-tabs"></span></h3><div class="body" id="c-meal"></div></div>
+        <div class="card"><h3><span data-ic="calendar"></span>학사 일정</h3><div class="body" id="c-events"></div></div>
+        <div class="card" id="c-att-card"><h3><span data-ic="users"></span>오늘 출석<span class="right"><button class="btn sm" id="att-qr-btn"></button></span></h3><div id="c-att"></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-lesson">
+      <div class="lesson-main" id="l-main"></div>
+      <div class="lesson-side">
+        <div class="timer" id="l-timer"></div>
+        <div class="card"><h3><span data-ic="megaphone"></span>공지</h3><div class="body" id="l-notices"></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-break">
+      <div class="break-hero" id="b-hero"></div>
+      <div class="break-side">
+        <div class="card" id="b-weather"></div>
+        <div class="card"><h3><span data-ic="megaphone"></span><span id="b-side-title">공지</span></h3><div class="body" id="b-side"></div></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="bottom">
+    <div class="navkeys" id="navkeys"></div>
+    <nav class="dock" id="dock"></nav>
+  </footer>
+
+  <div class="scrim" id="scrim"></div>
+  <div class="panel" id="panel"><div class="ph"><h2 id="p-title"></h2><div class="grow" id="p-tools"></div><button class="close" id="p-close"></button></div><div class="pb" id="p-body"></div></div>
+</div>
+
+<div class="emergency" id="emergency"><div class="badge"><span data-ic="alert"></span><span id="em-title">긴급 안내</span></div><div class="txt" id="em-text"></div><div class="meta" id="em-meta"></div><button id="em-ack">확인</button></div>
+<div class="class-alert" id="class-alert"></div>
+<div class="ticker" id="ticker"><span class="live"><i></i>방송</span><span class="cap" id="ticker-cap"></span></div>
+<div class="toast" id="toast"></div>
+<div class="setup" id="setup"><div class="box" id="setup-box"></div></div>
+<div class="sleep" id="sleep"></div>
+
+<script src="../shared/icons.js"></script>
+<script src="../shared/qr.js"></script>
+<script src="../shared/core.js"></script>
+<script src="board.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# 서명 키는 저장소에 올리지 않습니다
+keystore/
+*.jks
+*.keystore
+
+# 빌드 결과물 (APK는 GitHub Releases로 배포)
+dist/
+out/
+*.apk
+*.idsig
+
+.DS_Store
+Thumbs.db
