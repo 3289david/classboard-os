@@ -150,7 +150,7 @@ public class DataFetcher {
             boolean schoolHours = nowMin >= 6 * 60 + 30 && nowMin <= 18 * 60;
             JSONObject school = config.optJSONObject("school");
             JSONObject comci = config.optJSONObject("comci");
-            String key = config.optString("neisKey", "");
+            String key = SchoolPreset.neisKey(config);
 
             String comciSig = comci == null ? "" : String.valueOf(comci.optInt("code"));
             boolean comciOk = false;
@@ -248,7 +248,24 @@ public class DataFetcher {
                     if (boards.length() == 0) errs.append("홈페이지에서 공지사항 · 가정통신문 게시판을 찾지 못했습니다");
                     if (errs.length() > 0) error("homepage", new Exception(errs.toString().trim()));
                     else clearError("homepage");
-                    set("homepage", Util.jo("fetchedAt", System.currentTimeMillis(), "sig", home, "base", home, "boards", out));
+                    String logo;
+                    synchronized (lock) {
+                        JSONObject prev = data.optJSONObject("homepage");
+                        logo = prev != null && home.equals(prev.optString("base")) && System.currentTimeMillis() - prev.optLong("logoAt") < 86400_000L ? prev.optString("logo") : null;
+                    }
+                    long logoAt = System.currentTimeMillis();
+                    if (logo == null) {
+                        try {
+                            logo = SchoolHomepage.logo(home);
+                        } catch (Exception e) {
+                            logo = "";
+                        }
+                    } else {
+                        synchronized (lock) {
+                            logoAt = data.optJSONObject("homepage").optLong("logoAt");
+                        }
+                    }
+                    set("homepage", Util.jo("fetchedAt", System.currentTimeMillis(), "sig", home, "base", home, "boards", out, "logo", logo, "logoAt", logoAt));
                 } catch (Exception e) {
                     error("homepage", e);
                 }

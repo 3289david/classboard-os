@@ -64,6 +64,7 @@ input, select, textarea { font: inherit; color: var(--text); background: var(--c
 /* ---------------------------------------------------------------- top bar */
 .top { display: flex; align-items: center; gap: 1.6rem; padding: 1rem 1.8rem .6rem; }
 .top .school { display: flex; align-items: center; gap: .9rem; min-width: 0; }
+.top .school .logo { height: 3rem; width: auto; max-width: 16rem; object-fit: contain; }
 .top .school .name { font-size: 1.7rem; font-weight: 800; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chip { display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .8rem; border-radius: 99rem; background: var(--card2); color: var(--text2); font-size: 1rem; font-weight: 600; white-space: nowrap; }
 .chip.accent { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }

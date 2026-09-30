@@ -570,7 +570,7 @@
     const cfg = (state && state.config) || {};
     const bell = cfg.bell || [];
     const feeds = cfg.feeds || [];
-    el.innerHTML = card(ic('school') + '연결된 학교', '<div class="item"><div class="grow"><b>NEIS: ' + esc(cfg.school ? cfg.school.name + ' (' + cfg.school.atptName + ')' : '미설정') + '</b><span class="sub">급식 · 학사일정' + (cfg.hasNeisKey ? ' · 인증키 사용' : ' · 인증키 없음(샘플 한도 적용)') + '</span></div></div>' +
+    el.innerHTML = card(ic('school') + '연결된 학교', '<div class="item"><div class="grow"><b>NEIS: ' + esc(cfg.school ? cfg.school.name + ' (' + cfg.school.atptName + ')' : '미설정') + '</b><span class="sub">급식 · 학사일정' + (cfg.hasNeisKey ? (cfg.builtInNeisKey ? ' · 인증키 사용 (앱 내장)' : ' · 인증키 사용') : ' · 인증키 없음(샘플 한도 적용)') + '</span></div></div>' +
       '<div class="item"><div class="grow"><b>컴시간: ' + esc(cfg.comci ? cfg.comci.name + ' (' + cfg.comci.region + ', ' + cfg.comci.code + ')' : '미설정') + '</b><span class="sub">시간표 · 변경 사항 · 교시 시작 시각</span></div></div>' +
       '<div class="form" style="margin-top:.6rem"><div class="row"><input id="sc-q" placeholder="학교 이름" style="flex:1"><button class="btn pri" id="sc-go">' + ic('search') + '검색</button></div><div id="sc-res"></div></div>') +
       card(ic('clock') + '교시 시간', '<div class="form"><label>수업 시간(분)<input id="pm" type="number" min="30" max="120" value="' + esc(cfg.periodMinutes || '') + '" placeholder="비우면 학교급 기준 (초 40, 중 45, 고 50)"></label>' +

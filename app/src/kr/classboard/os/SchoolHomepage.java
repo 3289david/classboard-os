@@ -106,6 +106,15 @@ public final class SchoolHomepage {
         return sb.toString();
     }
 
+    /** School logo shown in the homepage header (an image whose alt text ends with "로고"). */
+    public static String logo(String base) throws IOException {
+        String html = new Client().request(base + "/", null);
+        Matcher m = Pattern.compile("<img[^>]*src=\"([^\"]+)\"[^>]*alt=\"[^\"]*로고\"").matcher(html);
+        if (!m.find()) return "";
+        String src = m.group(1).replaceAll(";jsessionid=[^?]*", "");
+        return src.startsWith("/") ? base + src : src;
+    }
+
     /** Find notice-type boards in the site menu. Returns [{menuId, name}]. */
     public static JSONArray discover(String base) throws IOException {
         String html = new Client().request(base + "/", null);

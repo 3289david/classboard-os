@@ -134,7 +134,7 @@
         C.get('/api/local/device').then((d) => {
           S.device = d;
           // Setup finished elsewhere (e.g. from the admin portal): leave the wizard.
-          if (d.role && !S.booted && !S.inWizardAdmin) { $('#setup').classList.remove('on'); start(); }
+          if (d.role && !S.booted && !S.inWizard) { $('#setup').classList.remove('on'); start(); }
           renderAll();
         });
         break;
@@ -268,6 +268,10 @@
     if (!S.device) return;
     const cfg = config();
     $('#t-school').textContent = cfg.displayName || (cfg.school && cfg.school.name) || (S.state ? '학교 설정 필요' : '학교 서버 연결 중');
+    const logo = $('#t-logo');
+    const logoUrl = S.data && S.data.homepage && S.data.homepage.logo;
+    if (logoUrl && logo.getAttribute('src') !== logoUrl) { logo.onerror = () => { logo.hidden = true; }; logo.onload = () => { logo.hidden = false; }; logo.src = logoUrl; }
+    if (!logoUrl) logo.hidden = true;
     $('#t-class').textContent = cls() ? classLabel(cls()) : (S.device.name || '교실 미지정');
     const st = [];
     const hubOk = S.online && S.state;
@@ -298,6 +302,12 @@
       if (known.length) return false;
     }
     return !isWeekend(t);
+  }
+
+  /** Named parts of the school day from settings, e.g. 아침 조회 08:40~08:50, 점심시간 12:30~13:30. */
+  function dayEvent() {
+    const now = C.nowMin();
+    return (config().dayEvents || []).find((e) => { const a = C.parseHm(e.start), b = C.parseHm(e.end); return a >= 0 && now >= a && now < b; }) || null;
   }
 
   function computeSeg() {
@@ -399,7 +409,7 @@
       const e = entryFor(seg.slot.p);
       const left = seg.slot.start - nowM;
       html += '<div class="row">' + ring(seg.gap ? 1 - left / seg.gap : 0, Math.ceil(left) + '<small style="font-size:1rem">분</small>', '후 시작') + '<div style="min-width:0">' +
-        '<div class="period">' + (seg.type === 'before' ? '수업 전' : '쉬는 시간') + '</div>' +
+        '<div class="period">' + esc(dayEvent() ? dayEvent().name : seg.type === 'before' ? '수업 전' : '쉬는 시간') + '</div>' +
         '<div class="subj">' + seg.slot.p + '교시 ' + esc(e ? e.s : '') + '</div><div class="meta">' +
         (e && e.t ? '<span>' + ic('user') + esc(e.t) + ' 선생님</span>' : '') + (roomOf(e) ? '<span>' + ic('door') + esc(roomOf(e)) + '</span>' : '') +
         '<span>' + ic('clock') + C.hm(seg.slot.start) + ' 시작</span></div></div></div>';
@@ -812,7 +822,8 @@
     const sig = txt + (e ? e.s : '');
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
-    let html = '<div class="lbl">' + (seg.type === 'before' ? '수업 시작까지' : '쉬는 시간 · 다음 수업까지') + '</div><div class="cnt">' + txt + '</div>' +
+    const ev = dayEvent();
+    let html = '<div class="lbl">' + esc(ev ? ev.name + ' · 다음 수업까지' : seg.type === 'before' ? '수업 시작까지' : '쉬는 시간 · 다음 수업까지') + '</div><div class="cnt">' + txt + '</div>' +
       '<div class="nx">' + seg.slot.p + '교시 ' + esc(e ? e.s : '') + '<small>' + esc([e && e.t ? e.t + ' 선생님' : '', roomOf(e)].filter(Boolean).join(' · ')) + '</small></div>';
     const l = lessonFor(seg.slot.p);
     if (l && l.supplies) html += '<div class="muted" style="font-size:1.5rem;margin-top:1rem">' + ic('backpack') + ' 준비물: ' + esc(l.supplies) + '</div>';
@@ -1331,6 +1342,7 @@
     const box = $('#setup-box');
     wrap.classList.add('on');
     const W = { role: adminOnly ? 'hub' : '', hub: '', token: '' };
+    S.inWizard = true; // stay in the wizard until it finishes, even when the device config changes underneath
 
     function stepRole() {
       box.innerHTML = '<h1>교실 OS 시작하기</h1><p class="lead">이 전자칠판의 역할을 선택하세요. 학교에 한 대만 "학교 서버"로 두고 나머지는 "교실 단말"로 연결합니다. 인터넷이 끊겨도 같은 교내 네트워크 안에서는 알림이 동작합니다.</p>' +
@@ -1379,7 +1391,6 @@
     }
 
     async function stepAdmin() {
-      S.inWizardAdmin = true;
       let st = null;
       try { st = (await C.get('/api/state')).state; } catch (e) { st = null; }
       if (st && st.setupDone) { stepSchoolLogin(); return; }
@@ -1393,7 +1404,9 @@
           const r = await C.post('/api/setup/init', { name: $('#a-name').value.trim(), pin }, { token: '' });
           W.token = r.token;
           S.admin = { token: r.token, role: 'admin', name: r.user.name, until: Date.now() + 10 * 60 * 1000 };
-          stepSchool();
+          let st2 = null;
+          try { st2 = (await C.get('/api/state')).state; } catch (e) { st2 = null; }
+          if (st2 && st2.config && st2.config.school) { await C.post('/api/local/refresh', {}).catch(() => {}); finish(); } else stepSchool();
         } catch (e) { $('#a-err').textContent = e.message; }
       };
     }
@@ -1466,7 +1479,7 @@
     }
 
     function finish() {
-      S.inWizardAdmin = false;
+      S.inWizard = false;
       wrap.classList.remove('on');
       start();
       setTimeout(loadData, 3000);

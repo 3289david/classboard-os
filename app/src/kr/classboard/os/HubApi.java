@@ -42,6 +42,32 @@ public class HubApi {
                 revMonitor.notifyAll();
             }
         });
+        applyPreset();
+    }
+
+    /** First start: connect the built-in school (중동중학교) so the board works without searching. */
+    private void applyPreset() {
+        boolean need = store.read(root -> root.optJSONObject("config") == null || !root.optJSONObject("config").has("school"));
+        if (!need) return;
+        JSONObject preset = SchoolPreset.config();
+        JSONArray contacts = (JSONArray) preset.remove("contacts");
+        store.write(root -> {
+            JSONObject cfg = Util.obj(root, "config");
+            Iterator<String> it = preset.keys();
+            while (it.hasNext()) {
+                String k = it.next();
+                if (!cfg.has(k)) Util.put(cfg, k, preset.opt(k));
+            }
+            JSONArray existing = Util.arr(root, "contacts");
+            if (existing.length() == 0 && contacts != null) {
+                for (int i = 0; i < contacts.length(); i++) {
+                    JSONObject c = Util.copy(contacts.optJSONObject(i));
+                    Util.put(c, "id", Util.randomId());
+                    Util.put(c, "createdAt", now());
+                    existing.put(c);
+                }
+            }
+        });
     }
 
     // ------------------------------------------------------------------ helpers
@@ -161,7 +187,8 @@ public class HubApi {
         if (cfg != null) {
             cfg = Util.copy(cfg);
             cfg.remove("neisKey");
-            Util.put(cfg, "hasNeisKey", root.optJSONObject("config").optString("neisKey").length() > 0);
+            Util.put(cfg, "hasNeisKey", SchoolPreset.neisKey(root.optJSONObject("config")).length() > 0);
+            Util.put(cfg, "builtInNeisKey", root.optJSONObject("config").optString("neisKey").isEmpty() && !Secrets.NEIS_KEY.isEmpty());
             Util.put(p, "config", cfg);
         }
         Util.put(p, "setupDone", root.optJSONArray("users") != null && root.optJSONArray("users").length() > 0);
@@ -323,7 +350,7 @@ public class HubApi {
                 return emergencyClose(r);
             case "/api/admin/neis-search":
                 requireSetupOrAdmin(r);
-                return Response.json(Util.jo("items", Neis.searchSchool(r.param("q"), store.read(root -> root.optJSONObject("config") == null ? "" : root.optJSONObject("config").optString("neisKey")))));
+                return Response.json(Util.jo("items", Neis.searchSchool(r.param("q"), store.read(root -> SchoolPreset.neisKey(root.optJSONObject("config"))))));
             case "/api/admin/comci-search":
                 requireSetupOrAdmin(r);
                 return Response.json(Util.jo("items", Comcigan.search(r.param("q"))));
@@ -543,7 +570,7 @@ public class HubApi {
     private Response saveConfig(Request r) throws Exception {
         requireSetupOrAdmin(r);
         JSONObject b = r.json();
-        String[] allowed = {"school", "comci", "periodMinutes", "bell", "lat", "lon", "locationName", "neisKey", "feeds", "displayName", "homepageUrl", "homepageBoards"};
+        String[] allowed = {"school", "comci", "periodMinutes", "bell", "lat", "lon", "locationName", "neisKey", "feeds", "displayName", "homepageUrl", "homepageBoards", "dayEvents"};
         store.write(root -> {
             JSONObject cfg = Util.obj(root, "config");
             for (String k : allowed) {
