@@ -22,7 +22,7 @@ echo "[1/6] resources"
 "$BT/aapt2$EXE" compile --dir app/res -o out/res.zip
 "$BT/aapt2$EXE" link -o out/base.apk -I "$PLATFORM" --manifest app/AndroidManifest.xml \
   --java out/gen -A app/assets --min-sdk-version 26 --target-sdk-version 34 \
-  --version-code 210 --version-name 2.1.0 out/res.zip
+  --version-code 230 --version-name 2.3.0 out/res.zip
 
 # The client has no API key: school data comes from the data server (NEIS falls back to keyless requests).
 mkdir -p out/gen/kr/classboard/os
