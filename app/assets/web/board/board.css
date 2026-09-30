@@ -368,6 +368,18 @@ main { position: relative; overflow: hidden; padding: .4rem 1.8rem 1rem; }
 .class-alert { position: fixed; z-index: 80; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(.9); opacity: 0; pointer-events: none; transition: all .25s ease; background: var(--card); color: var(--text); border-radius: 2.4rem; padding: 3.4rem 5rem; text-align: center; box-shadow: 0 3rem 8rem rgba(0,0,0,.6); min-width: 60rem; }
 .class-alert.on { opacity: 1; transform: translate(-50%, -50%) scale(1); pointer-events: auto; }
 .class-alert .ic { width: 7rem; height: 7rem; }
+/* 조용히 해주세요: the card blinks in its colour and the whole screen edge flashes */
+.class-alert.flash { animation: alertBlink .9s ease-in-out infinite; }
+.class-alert.flash .t { animation: alertText .9s ease-in-out infinite; }
+@keyframes alertBlink {
+  0%, 100% { background: var(--card); box-shadow: 0 3rem 8rem rgba(0,0,0,.6), 0 0 0 0 currentColor; transform: translate(-50%, -50%) scale(1); }
+  50% { background: currentColor; box-shadow: 0 3rem 8rem rgba(0,0,0,.6), 0 0 0 1.4rem color-mix(in srgb, currentColor 35%, transparent); transform: translate(-50%, -50%) scale(1.04); }
+}
+@keyframes alertText { 0%, 100% { color: var(--text); } 50% { color: #fff; } }
+.class-alert.flash .s { animation: alertText .9s ease-in-out infinite; }
+.edge-flash { position: fixed; inset: 0; z-index: 79; pointer-events: none; display: none; box-shadow: inset 0 0 0 1.6rem var(--indigo), inset 0 0 12rem color-mix(in srgb, var(--indigo) 60%, transparent); }
+.edge-flash.on { display: block; animation: edgeBlink .9s steps(1, end) infinite; }
+@keyframes edgeBlink { 50% { opacity: 0; } }
 .class-alert .t { font-size: 5.2rem; font-weight: 900; letter-spacing: -.03em; margin-top: 1.2rem; }
 .class-alert .s { font-size: 2.2rem; color: var(--text2); margin-top: .6rem; }
 .class-alert .bar2 { height: .5rem; border-radius: 1rem; margin-top: 2rem; background: var(--card2); overflow: hidden; }
@@ -410,3 +422,122 @@ main { position: relative; overflow: hidden; padding: .4rem 1.8rem 1rem; }
 
 .sleep { position: fixed; inset: 0; z-index: 99; background: #000; display: none; align-items: center; justify-content: center; color: #333; font-size: 2rem; }
 .sleep.on { display: flex; }
+
+/* ================================================================ motion & loading
+   Entry animations run only when containers appear (view switch, panel open, first boot),
+   never on the frequent content re-renders. Everything is disabled for reduced motion. */
+:root { --ease-out: cubic-bezier(.22, 1, .36, 1); --spring: cubic-bezier(.34, 1.56, .64, 1); }
+
+/* boot screen */
+.boot { position: fixed; inset: 0; z-index: 100; background: radial-gradient(120% 90% at 50% 40%, #1b2440 0%, #0b0e14 70%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.2rem; transition: opacity .6s ease, visibility .6s; }
+.boot.done { opacity: 0; visibility: hidden; }
+.boot-mark { width: 11rem; height: 11rem; position: relative; }
+.boot-mark svg { width: 100%; height: 100%; overflow: visible; }
+.boot-mark .frame { fill: none; stroke: #6b95ff; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 260; stroke-dashoffset: 260; animation: bootDraw 1.2s var(--ease-out) .15s forwards; }
+.boot-mark .stand { fill: none; stroke: #6b95ff; stroke-width: 3.2; stroke-linecap: round; stroke-dasharray: 40; stroke-dashoffset: 40; animation: bootDraw .6s var(--ease-out) .9s forwards; }
+.boot-mark .line { stroke: #fff; stroke-width: 3.2; stroke-linecap: round; stroke-dasharray: 30; stroke-dashoffset: 30; opacity: .9; }
+.boot-mark .l1 { animation: bootDraw .5s var(--ease-out) 1.05s forwards; }
+.boot-mark .l2 { animation: bootDraw .5s var(--ease-out) 1.2s forwards; }
+.boot-mark .l3 { animation: bootDraw .5s var(--ease-out) 1.35s forwards; }
+.boot-mark::after { content: ""; position: absolute; inset: -2.5rem; border-radius: 50%; background: radial-gradient(circle, rgba(107,149,255,.35), transparent 65%); animation: bootGlow 2.4s ease-in-out infinite; z-index: -1; }
+@keyframes bootDraw { to { stroke-dashoffset: 0; } }
+@keyframes bootGlow { 0%, 100% { transform: scale(.85); opacity: .5; } 50% { transform: scale(1.1); opacity: 1; } }
+.boot-title { font-size: 3.2rem; font-weight: 900; letter-spacing: -.03em; color: #fff; opacity: 0; transform: translateY(1rem); animation: riseIn .8s var(--ease-out) .5s forwards; }
+.boot-status { font-size: 1.3rem; color: #a9b4c3; min-height: 1.8rem; opacity: 0; animation: riseIn .8s var(--ease-out) .8s forwards; }
+.boot-bar { width: 22rem; height: .45rem; border-radius: 1rem; background: rgba(255,255,255,.1); overflow: hidden; opacity: 0; animation: riseIn .8s var(--ease-out) .9s forwards; }
+.boot-bar i { display: block; height: 100%; width: 40%; border-radius: 1rem; background: linear-gradient(90deg, transparent, #6b95ff, #b57bff, transparent); animation: barSlide 1.3s ease-in-out infinite; }
+@keyframes barSlide { from { transform: translateX(-110%); } to { transform: translateX(260%); } }
+@keyframes riseIn { to { opacity: 1; transform: none; } }
+
+/* first appearance of the dashboard: cards rise in one after another */
+#app.entering .top, #app.entering .bottom, #app.entering .card, #app.entering .tt-strip > *, #app.entering .mini { animation: cardIn .7s var(--ease-out) both; }
+#app.entering .top { animation-delay: .05s; }
+#app.entering .home-left .card { animation-delay: .12s; }
+#app.entering .home-right .card:nth-child(1) { animation-delay: .2s; }
+#app.entering .home-right .card:nth-child(2) { animation-delay: .28s; }
+#app.entering .mini:nth-child(1) { animation-delay: .36s; }
+#app.entering .mini:nth-child(2) { animation-delay: .42s; }
+#app.entering .mini:nth-child(3) { animation-delay: .48s; }
+#app.entering .tt-strip > *:nth-child(2) { animation-delay: .34s; }
+#app.entering .tt-strip > *:nth-child(3) { animation-delay: .38s; }
+#app.entering .tt-strip > *:nth-child(4) { animation-delay: .42s; }
+#app.entering .tt-strip > *:nth-child(5) { animation-delay: .46s; }
+#app.entering .tt-strip > *:nth-child(6) { animation-delay: .5s; }
+#app.entering .tt-strip > *:nth-child(n+7) { animation-delay: .54s; }
+#app.entering .bottom { animation-delay: .5s; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(1.6rem) scale(.985); } to { opacity: 1; transform: none; } }
+
+/* view switches */
+.view.on { animation: viewIn .45s var(--ease-out); }
+@keyframes viewIn { from { opacity: 0; transform: translateY(1rem); } to { opacity: 1; transform: none; } }
+
+/* panels & scrim */
+/* no backdrop blur: too heavy for low-end whiteboard GPUs */
+.scrim.on { animation: fadeIn .25s ease; background: rgba(4,6,12,.6); }
+.panel.on { animation: panelIn .38s var(--ease-out); }
+.panel.side.on { animation: sideIn .38s var(--ease-out); }
+.panel.on.closing { animation: panelOut .22s ease forwards; }
+.panel.side.on.closing { animation: sideOut .22s ease forwards; }
+.scrim.on.closing { animation: fadeOut .22s ease forwards; }
+@keyframes panelOut { to { opacity: 0; transform: translateX(-50%) translateY(1.2rem) scale(.98); } }
+@keyframes sideOut { to { opacity: 0; transform: translateX(2rem); } }
+@keyframes fadeOut { to { opacity: 0; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes panelIn { from { opacity: 0; transform: translateX(-50%) translateY(2rem) scale(.97); } to { opacity: 1; transform: translateX(-50%); } }
+@keyframes sideIn { from { opacity: 0; transform: translateX(3rem); } to { opacity: 1; transform: none; } }
+.tool, .app, .qr-card, .mini, .notice { transition: transform .18s var(--ease-out), background .2s; }
+.tool:active, .app:active, .qr-card:active, .mini:active, .notice:active { transform: scale(.97); }
+.tool-grid .tool, .app-grid .app { animation: cardIn .45s var(--ease-out) both; }
+.tool-grid .tool:nth-child(2), .app-grid .app:nth-child(2) { animation-delay: .03s; }
+.tool-grid .tool:nth-child(3), .app-grid .app:nth-child(3) { animation-delay: .06s; }
+.tool-grid .tool:nth-child(4), .app-grid .app:nth-child(4) { animation-delay: .09s; }
+.tool-grid .tool:nth-child(5), .app-grid .app:nth-child(5) { animation-delay: .12s; }
+.tool-grid .tool:nth-child(6), .app-grid .app:nth-child(6) { animation-delay: .15s; }
+.tool-grid .tool:nth-child(7), .app-grid .app:nth-child(7) { animation-delay: .18s; }
+.tool-grid .tool:nth-child(n+8), .app-grid .app:nth-child(n+8) { animation-delay: .21s; }
+
+/* bottom bar: highlight and soft press */
+.dock button, .navkeys button, .sys-keys button { transition: background .25s ease, color .25s ease, transform .15s var(--ease-out); }
+.dock button:active, .navkeys button:active, .sys-keys button:active { transform: scale(.92); }
+.dock button.on { box-shadow: inset 0 -.25rem 0 var(--accent); }
+.dock button.on .ic { animation: iconPop .4s var(--spring); }
+@keyframes iconPop { 0% { transform: scale(.8); } 100% { transform: scale(1); } }
+
+/* "now" card: slowly drifting gradient, smooth ring */
+.now { background: linear-gradient(120deg, #2f5bd3, #4a2fd3, #6a3fe0, #2f5bd3); background-size: 300% 300%; animation: nowDrift 18s ease-in-out infinite; }
+@keyframes nowDrift { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+.ring svg circle:last-child { transition: stroke-dashoffset 1s var(--ease-out); }
+.tt-strip .p { transition: background .4s ease, opacity .4s ease, transform .3s var(--ease-out); }
+.tt-strip .p.cur { transform: translateY(-.25rem); animation: curGlow 2.6s ease-in-out infinite; }
+@keyframes curGlow { 0%, 100% { box-shadow: 0 0 0 .2rem rgba(107,149,255,.25), 0 1rem 2.4rem rgba(47,91,211,.35); } 50% { box-shadow: 0 0 0 .45rem rgba(107,149,255,.45), 0 1.2rem 2.8rem rgba(47,91,211,.55); } }
+
+/* alerts: springy entrance */
+.class-alert { transition: opacity .3s ease, transform .5s var(--spring); }
+.emergency.on .txt { opacity: 0; transform: translateY(1rem); animation: riseIn .6s var(--ease-out) .15s forwards; }
+.toast.on { animation: toastIn .35s var(--ease-out); }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 1rem); } to { opacity: 1; transform: translateX(-50%); } }
+
+/* skeleton placeholders while data loads */
+.skel { position: relative; overflow: hidden; background: var(--card2); border-radius: .7rem; }
+.skel::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.07), transparent); animation: shimmer 1.4s ease-in-out infinite; }
+:root[data-theme="light"] .skel::after { background: linear-gradient(90deg, transparent, rgba(0,0,0,.05), transparent); }
+@keyframes shimmer { to { transform: translateX(100%); } }
+.skel-lines { display: grid; gap: .7rem; }
+.skel-lines .skel { height: 1.6rem; }
+.skel-lines .skel:nth-child(2) { width: 82%; }
+.skel-lines .skel:nth-child(3) { width: 64%; }
+.tt-strip .skel { flex: 1; height: 7.4rem; border-radius: 1rem; }
+
+/* small loading indicator (three dots) */
+.dots-loader { display: inline-flex; gap: .45rem; align-items: center; padding: 1rem 0; color: var(--text2); font-size: 1.1rem; }
+.dots-loader i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--accent); animation: dotBounce 1s ease-in-out infinite; }
+.dots-loader i:nth-child(2) { animation-delay: .15s; }
+.dots-loader i:nth-child(3) { animation-delay: .3s; margin-right: .5rem; }
+@keyframes dotBounce { 0%, 80%, 100% { transform: scale(.6); opacity: .4; } 40% { transform: scale(1); opacity: 1; } }
+
+.setup.on .box { animation: panelInCenter .5s var(--ease-out); }
+@keyframes panelInCenter { from { opacity: 0; transform: translateY(2rem) scale(.97); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

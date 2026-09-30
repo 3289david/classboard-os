@@ -66,10 +66,10 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         current = new WeakReference<>(this);
         CoreService.start(this);
-        getWindow().setStatusBarColor(Color.BLACK);
+        getWindow().setStatusBarColor(Color.parseColor("#0B0E14"));
         applyKeepOn();
         web = new WebView(this);
-        web.setBackgroundColor(Color.parseColor("#0F1115"));
+        web.setBackgroundColor(Color.parseColor("#0B0E14"));
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);

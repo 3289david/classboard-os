@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ system splash: same dark background and icon as the web boot screen. -->
+    <style name="Theme.ClassBoard" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/boot_bg</item>
+        <item name="android:statusBarColor">@color/boot_bg</item>
+        <item name="android:navigationBarColor">@color/boot_bg</item>
+        <item name="android:windowSplashScreenBackground">@color/boot_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/boot_bg</item>
+    </style>
+</resources>

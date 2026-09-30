@@ -7,6 +7,16 @@
 <link rel="stylesheet" href="board.css">
 </head>
 <body>
+<div class="boot" id="boot">
+  <div class="boot-mark"><svg viewBox="0 0 64 64" aria-hidden="true">
+    <path class="frame" d="M10 12h44a4 4 0 0 1 4 4v24a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4V16a4 4 0 0 1 4-4z"/>
+    <path class="stand" d="M32 44v8M22 54h20"/>
+    <path class="line l1" d="M15 22h18"/><path class="line l2" d="M15 29h12"/><path class="line l3" d="M15 36h22"/>
+  </svg></div>
+  <div class="boot-title">교실 OS</div>
+  <div class="boot-bar"><i></i></div>
+  <div class="boot-status" id="boot-status">시작하는 중</div>
+</div>
 <div id="app">
   <header class="top">
     <div class="school"><img id="t-logo" class="logo" alt="" hidden><span class="name" id="t-school"></span><span class="chip accent" id="t-class"></span></div>
@@ -62,6 +72,7 @@
 
 <div class="emergency" id="emergency"><div class="badge"><span data-ic="alert"></span><span id="em-title">긴급 안내</span></div><div class="txt" id="em-text"></div><div class="meta" id="em-meta"></div><button id="em-ack">확인</button></div>
 <div class="class-alert" id="class-alert"></div>
+<div class="edge-flash" id="edge-flash"></div>
 <div class="toast" id="toast"></div>
 <div class="setup" id="setup"><div class="box" id="setup-box"></div></div>
 <div class="sleep" id="sleep"></div>

@@ -235,10 +235,11 @@ public class CoreService extends Service {
             if (System.currentTimeMillis() - a.optLong("at") > 60_000L) continue;
             boolean sound = settings == null || settings.optBoolean("sound", true);
             int secs = settings == null ? 8 : settings.optInt("durationSec", 8);
-            if (sound) Chime.play("soft");
+            boolean quiet = "quiet".equals(a.optString("type"));
+            if (sound) Chime.play(quiet ? "quiet" : "soft");
             if (!foreground) {
                 String[] t = classAlertText(a.optString("type"));
-                overlays.showClassAlert(t[0], t[1], Integer.parseInt(t[2]), secs);
+                overlays.showClassAlert(t[0], t[1], Integer.parseInt(t[2]), secs, quiet);
             }
         }
         firstStateSeen = true;

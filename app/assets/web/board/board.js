@@ -68,6 +68,20 @@
   function classLabel(c) { if (!c) return ''; const p = c.split('-'); return p[0] + '학년 ' + p[1] + '반'; }
 
   // ---------------------------------------------------------------- boot
+  const bootAt = Date.now();
+  function bootStatus(t) { const el = $('#boot-status'); if (el) el.textContent = t; }
+  /** Fade the boot screen out (after the logo animation has played) and let the dashboard cards rise in. */
+  function bootDone() {
+    if (bootDone.done) return;
+    bootDone.done = true;
+    setTimeout(() => {
+      $('#boot').classList.add('done');
+      const app = $('#app');
+      app.classList.add('entering');
+      setTimeout(() => app.classList.remove('entering'), 1400);
+    }, Math.max(0, 2300 - (Date.now() - bootAt)));
+  }
+
   async function boot() {
     fillIcons(document);
     $('#p-close').innerHTML = ic('x');
@@ -76,10 +90,12 @@
     try { const th = localStorage.getItem('cb_theme'); if (th) document.documentElement.dataset.theme = th; } catch (e) { /* ignore */ }
     tickClock();
     setInterval(tickClock, 1000);
+    bootStatus('전자칠판 서비스 연결 중');
     for (;;) {
       try { S.device = await C.get('/api/local/device'); break; } catch (e) { await sleep(800); }
     }
-    if (!S.device.role) { setupWizard(); return; }
+    if (!S.device.role) { bootDone(); setupWizard(); return; }
+    bootStatus(S.device.role === 'hub' ? '학교 데이터 불러오는 중' : '학교 서버 연결 중');
     start();
   }
 
@@ -88,6 +104,7 @@
     S.booted = true;
     renderNavKeys();
     renderDock();
+    setTimeout(bootDone, 6000);
     stateLoop();
     loadData();
     pollSys();
@@ -103,7 +120,7 @@
       try {
         const r = await C.get('/api/state?wait=1&since=' + S.rev);
         S.online = r.online !== false && !r.offline;
-        if (r.state) { S.state = r.state; S.rev = r.rev; onState(); }
+        if (r.state) { S.state = r.state; S.rev = r.rev; onState(); if (S.dataLoaded) bootDone(); }
         else renderTop();
       } catch (e) {
         S.online = false;
@@ -115,8 +132,9 @@
 
   async function loadData() {
     if (!S.device) return;
-    try { S.data = await C.get('/api/local/data?cls=' + encodeURIComponent(cls())); } catch (e) { /* keep cache */ }
+    try { S.data = await C.get('/api/local/data?cls=' + encodeURIComponent(cls())); S.dataLoaded = true; } catch (e) { /* keep cache */ }
     renderAll();
+    if (S.state) bootDone();
   }
 
   function pollSys() {
@@ -244,7 +262,9 @@
     const st = classState();
     const secs = (st && st.officerSettings && st.officerSettings.durationSec) || 8;
     const el = $('#class-alert');
-    el.className = 'class-alert c-' + t.color;
+    const flash = type === 'quiet';
+    el.className = 'class-alert c-' + t.color + (flash ? ' flash' : '');
+    $('#edge-flash').classList.toggle('on', flash);
     el.innerHTML = ic(t.icon) + '<div class="t" style="color:var(--text)">' + esc(t.type === 'teacher' ? '선생님을 호출했습니다' : t.label) + '</div><div class="s">' + esc(t.sub) + '</div><div class="bar2"><i></i></div>';
     requestAnimationFrame(() => {
       el.classList.add('on');
@@ -252,9 +272,10 @@
       bar.style.transition = 'transform ' + secs + 's linear';
       requestAnimationFrame(() => { bar.style.transform = 'scaleX(0)'; });
     });
-    el.onclick = () => el.classList.remove('on');
+    const hide = () => { el.classList.remove('on', 'flash'); $('#edge-flash').classList.remove('on'); };
+    el.onclick = hide;
     clearTimeout(showClassAlert._t);
-    showClassAlert._t = setTimeout(() => el.classList.remove('on'), secs * 1000);
+    showClassAlert._t = setTimeout(hide, secs * 1000);
   }
 
   // ---------------------------------------------------------------- top bar
@@ -418,6 +439,15 @@
     } else {
       html += '<div class="subj">오늘은 수업이 없습니다</div><div class="meta">' + esc(C.dateLabel(C.today())) + '</div>';
     }
+    const shape = html.replace(/stroke-dashoffset="[^"]*"/, '');
+    if (el._shape === shape) {
+      // Same content: move the progress ring smoothly instead of rebuilding the card.
+      const m = /stroke-dashoffset="([^"]*)"/.exec(html);
+      const c = el.querySelector('.ring svg circle:last-child');
+      if (m && c) c.setAttribute('stroke-dashoffset', m[1]);
+      return;
+    }
+    el._shape = shape;
     el.innerHTML = html;
   }
 
@@ -444,6 +474,7 @@
     const tt = S.data && S.data.timetable;
     const err = S.data && S.data.errors && (S.data.errors.comci || S.data.errors.timetable);
     el.onclick = () => openPanel('tt');
+    if (!S.dataLoaded) { el.innerHTML = '<div class="skel"></div>'.repeat(6); return; }
     if (!cls()) { el.innerHTML = '<div class="empty">' + ic('info') + '학급이 지정되지 않았습니다</div>'; return; }
     if (!tt) { el.innerHTML = '<div class="empty">' + ic('info') + (err ? '시간표를 불러오지 못했습니다' : '관리자 설정에서 컴시간 학교를 연결하세요') + '</div>'; return; }
     const ps = periodsOn(C.today());
@@ -481,6 +512,7 @@
 
   function renderNotices(el, withFeeds, compact) {
     if (!el) return;
+    if (!S.state) { el.innerHTML = '<div class="skel-lines"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>'; return; }
     const all = C.noticesFor(S.state, cls());
     const list = compact ? all.slice(0, 3) : all;
     const cs = classState();
@@ -591,6 +623,7 @@
     const list = md.list, date = md.date, h = md.h;
     $('#meal-title').textContent = '급식 · ' + (date === C.today() ? '오늘' : C.shortDate(date));
     const tabs = $('#meal-tabs');
+    if (!S.dataLoaded) { tabs.innerHTML = ''; el.innerHTML = '<div class="skel-lines"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>'; return; }
     if (!list.length) {
       tabs.innerHTML = '';
       el.innerHTML = '<div class="empty">' + ic('meal') + (err ? '급식 정보를 불러오지 못했습니다' : md.m ? '등록된 급식이 없습니다' : '학교 설정 후 NEIS에서 불러옵니다') + '</div>';
@@ -690,7 +723,7 @@
     $('#p-tools').innerHTML = '<button class="btn" id="hp-back">' + ic('left') + '목록</button>';
     $('#hp-back').onclick = () => openPanel('homepage', { menuId: o.menuId });
     const it = homepageBoards().reduce((f, b) => f || (b.items || []).find((x) => x.nttId === o.nttId), null);
-    body.innerHTML = '<div class="empty">' + ic('refresh') + '학교 홈페이지에서 불러오는 중...</div>';
+    body.innerHTML = '<div class="dots-loader"><i></i><i></i><i></i>학교 홈페이지에서 불러오는 중</div>';
     try {
       const d = await C.get('/api/homepage/detail?menuId=' + encodeURIComponent(o.menuId) + '&bbsId=' + encodeURIComponent(o.bbsId) + '&nttId=' + encodeURIComponent(o.nttId) + '&sen=' + (o.sen === '1' ? 1 : 0));
       if (S.panel !== 'hpost' || S.panelOpts !== o) return;
@@ -911,7 +944,7 @@
 
   function navKey(k) {
     if (k === 'back') {
-      if ($('#class-alert').classList.contains('on')) { $('#class-alert').classList.remove('on'); return; }
+      if ($('#class-alert').classList.contains('on')) { $('#class-alert').classList.remove('on', 'flash'); $('#edge-flash').classList.remove('on'); return; }
       if (S.panel) { closePanel(); return; }
       S.manualView = null;
       setView(autoView());
@@ -944,6 +977,9 @@
     S.panel = name;
     S.panelOpts = opts || {};
     const p = $('#panel');
+    clearTimeout(closePanel._t);
+    p.classList.remove('closing');
+    $('#scrim').classList.remove('closing');
     p.classList.toggle('side', name === 'quick');
     p.classList.add('on');
     $('#scrim').classList.add('on');
@@ -951,10 +987,17 @@
     refreshPanel();
   }
   function closePanel() {
+    if (!S.panel) return;
     if (S.panel === 'portal') $('#p-body').innerHTML = '';
     S.panel = null;
-    $('#panel').classList.remove('on');
-    $('#scrim').classList.remove('on');
+    const p = $('#panel'), sc = $('#scrim');
+    p.classList.add('closing');
+    sc.classList.add('closing');
+    clearTimeout(closePanel._t);
+    closePanel._t = setTimeout(() => {
+      p.classList.remove('on', 'closing');
+      sc.classList.remove('on', 'closing');
+    }, 220);
   }
   function refreshPanel() {
     const titles = { apps: '앱', split: '화면 분할로 열기', files: '파일 · USB', qr: 'QR 코드', room: '교실 정보', contacts: '교내 연락처', quick: '빠른 설정', settings: '설정', portal: '관리자',

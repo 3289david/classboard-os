@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark window background that matches the web boot screen, so there is no grey flash on start. -->
+    <style name="Theme.ClassBoard" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/boot_bg</item>
+        <item name="android:statusBarColor">@color/boot_bg</item>
+        <item name="android:navigationBarColor">@color/boot_bg</item>
+    </style>
+    <color name="boot_bg">#FF0B0E14</color>
+</resources>

@@ -141,7 +141,7 @@
 
   async function pageHomepagePost(menuId, bbsId, nttId, sen) {
     title('가정통신문');
-    root.innerHTML = card(ic('refresh') + '불러오는 중', '<div class="empty">학교 홈페이지에서 불러오는 중...</div>');
+    root.innerHTML = card(ic('file') + '가정통신문', '<div class="dots-loader"><i></i><i></i><i></i>학교 홈페이지에서 불러오는 중</div>');
     try {
       const d = await C.get('/api/homepage/detail?menuId=' + encodeURIComponent(menuId) + '&bbsId=' + encodeURIComponent(bbsId) + '&nttId=' + encodeURIComponent(nttId) + '&sen=' + (sen === '1' ? 1 : 0), { token: '' });
       root.innerHTML = card(ic('file') + esc(d.title || '가정통신문'),
@@ -277,7 +277,7 @@
 
   async function drawTab() {
     const el = $('#tab');
-    el.innerHTML = '<div class="empty">불러오는 중...</div>';
+    el.innerHTML = '<div class="dots-loader"><i></i><i></i><i></i>불러오는 중</div>';
     await loadState();
     const fn = { lesson: tabLesson, notice: tabNotice, plan: tabPlan, class: tabClassAll, emergency: tabEmergency, settings: tabSettings }[tab];
     try { await fn(el); } catch (e) { el.innerHTML = card(ic('alert') + '오류', esc(e.message)); }

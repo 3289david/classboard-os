@@ -159,7 +159,9 @@ public class Overlays {
 
     // ---------------------------------------------------------------- class alert
 
-    public void showClassAlert(String title, String sub, int color, int seconds) {
+    private Runnable flashTick;
+
+    public void showClassAlert(String title, String sub, int color, int seconds, boolean flash) {
         ui.post(() -> {
             if (!allowed()) return;
             hideClassAlertNow();
@@ -190,6 +192,25 @@ public class Overlays {
             s.setGravity(Gravity.CENTER);
             box.addView(s);
             box.setOnClickListener(v -> hideClassAlertNow());
+            if (flash) {
+                // Hard blink between white and the accent colour every 400 ms (independent of system animation settings).
+                GradientDrawable bg = rounded(0xF7FFFFFF, dp(36));
+                box.setBackground(bg);
+                final boolean[] on = {false};
+                flashTick = new Runnable() {
+                    @Override
+                    public void run() {
+                        if (classAlertView != box) return;
+                        on[0] = !on[0];
+                        bg.setColor(on[0] ? color : 0xF7FFFFFF);
+                        t.setTextColor(on[0] ? Color.WHITE : 0xFF1B1B1F);
+                        s.setTextColor(on[0] ? 0xE6FFFFFF : 0xFF45464F);
+                        box.setScaleX(on[0] ? 1.04f : 1f);
+                        box.setScaleY(on[0] ? 1.04f : 1f);
+                        ui.postDelayed(this, 400);
+                    }
+                };
+            }
             try {
                 WindowManager.LayoutParams clp = params(false, false);
                 int w = (int) (ctx.getResources().getDisplayMetrics().widthPixels * 0.7f);
@@ -198,6 +219,7 @@ public class Overlays {
                 clp.height = box.getMeasuredHeight();
                 wm.addView(box, clp);
                 classAlertView = box;
+                if (flashTick != null) ui.post(flashTick);
                 ui.postDelayed(() -> {
                     if (classAlertView == box) hideClassAlertNow();
                 }, Math.max(3, seconds) * 1000L);
@@ -207,6 +229,10 @@ public class Overlays {
     }
 
     private void hideClassAlertNow() {
+        if (flashTick != null) {
+            ui.removeCallbacks(flashTick);
+            flashTick = null;
+        }
         if (classAlertView != null) {
             try {
                 wm.removeView(classAlertView);

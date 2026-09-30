@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Outline board mark matching the first frame of the web boot animation. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="30" android:translateY="30" android:scaleX="0.75" android:scaleY="0.75">
+        <path android:strokeColor="#FF6B95FF" android:strokeWidth="3.2" android:strokeLineCap="round" android:strokeLineJoin="round"
+            android:pathData="M10,12h44a4,4 0,0 1,4 4v24a4,4 0,0 1,-4 4H10a4,4 0,0 1,-4 -4V16a4,4 0,0 1,4 -4z"/>
+        <path android:strokeColor="#FF6B95FF" android:strokeWidth="3.2" android:strokeLineCap="round" android:pathData="M32,44v8M22,54h20"/>
+    </group>
+</vector>
