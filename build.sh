@@ -21,7 +21,7 @@ echo "[1/6] resources"
 "$BT/aapt2$EXE" compile --dir app/res -o out/res.zip
 "$BT/aapt2$EXE" link -o out/base.apk -I "$PLATFORM" --manifest app/AndroidManifest.xml \
   --java out/gen -A app/assets --min-sdk-version 26 --target-sdk-version 34 \
-  --version-code 1 --version-name 1.0.0 out/res.zip
+  --version-code 130 --version-name 1.3.0 out/res.zip
 
 # API keys live in secrets/ (git-ignored) and are compiled into the APK only.
 NEIS_KEY=""
