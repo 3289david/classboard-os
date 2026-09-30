@@ -106,7 +106,7 @@ public class DataFetcher {
     public JSONObject shared() {
         synchronized (lock) {
             JSONObject o = new JSONObject();
-            for (String k : new String[]{"comciFull", "meals", "schedule", "weather", "feeds"}) if (data.has(k)) Util.put(o, k, data.opt(k));
+            for (String k : new String[]{"comciFull", "meals", "schedule", "weather", "feeds", "homepage"}) if (data.has(k)) Util.put(o, k, data.opt(k));
             return Util.copy(o);
         }
     }
@@ -153,6 +153,7 @@ public class DataFetcher {
             String key = config.optString("neisKey", "");
 
             String comciSig = comci == null ? "" : String.valueOf(comci.optInt("code"));
+            boolean comciOk = false;
             if (comci != null && comci.optInt("code") > 0) {
                 long maxAge = schoolHours ? 10 * 60_000L : 60 * 60_000L;
                 if (force || age("comciFull") > maxAge || !comciSig.equals(sig("comciFull"))) {
@@ -165,7 +166,12 @@ public class DataFetcher {
                         error("comci", e);
                     }
                 }
-            } else if (school != null && !school.optString("code").isEmpty() && cls != null && cls.contains("-")) {
+                synchronized (lock) {
+                    comciOk = data.optJSONObject("comciFull") != null && comciSig.equals(data.optJSONObject("comciFull").optString("sig"));
+                }
+            }
+            // NEIS timetable when Comcigan is not configured or unreachable (e.g. port 4082 blocked on the school network).
+            if (!comciOk && school != null && !school.optString("code").isEmpty() && cls != null && cls.contains("-")) {
                 // Fallback: NEIS timetable for this device's class when Comcigan is not configured.
                 String s2 = school.optString("code") + "/" + cls;
                 if (force || age("neisTimetable") > 60 * 60_000L || !s2.equals(sig("neisTimetable"))) {
@@ -220,6 +226,31 @@ public class DataFetcher {
                     } catch (Exception e) {
                         error("weather", e);
                     }
+                }
+            }
+
+            String homeUrl = config.optString("homepageUrl", "");
+            String home = SchoolHomepage.base(!homeUrl.isEmpty() ? homeUrl : school == null ? "" : school.optString("homepage"));
+            if (!home.isEmpty() && (force || age("homepage") > 15 * 60_000L || !home.equals(sig("homepage")))) {
+                try {
+                    JSONArray boards = config.optJSONArray("homepageBoards");
+                    if (boards == null || boards.length() == 0) boards = SchoolHomepage.discover(home);
+                    JSONArray out = new JSONArray();
+                    StringBuilder errs = new StringBuilder();
+                    for (int i = 0; i < boards.length(); i++) {
+                        JSONObject b = boards.optJSONObject(i);
+                        try {
+                            out.put(SchoolHomepage.board(home, b.optString("menuId"), b.optString("name"), 15));
+                        } catch (Exception e) {
+                            errs.append(b.optString("name")).append(": ").append(e.getMessage()).append('\n');
+                        }
+                    }
+                    if (boards.length() == 0) errs.append("홈페이지에서 공지사항 · 가정통신문 게시판을 찾지 못했습니다");
+                    if (errs.length() > 0) error("homepage", new Exception(errs.toString().trim()));
+                    else clearError("homepage");
+                    set("homepage", Util.jo("fetchedAt", System.currentTimeMillis(), "sig", home, "base", home, "boards", out));
+                } catch (Exception e) {
+                    error("homepage", e);
                 }
             }
 

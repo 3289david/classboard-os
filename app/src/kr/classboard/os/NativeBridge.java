@@ -527,13 +527,26 @@ public class NativeBridge {
     /** Download a hub file (lesson material) to cache and open it with a viewer app. */
     @JavascriptInterface
     public String openRemote(String fileId, String name, String mime) {
+        return downloadAndOpen("http://127.0.0.1:" + DeviceConfig.PORT + "/api/files/" + fileId, fileId, name, mime);
+    }
+
+    /** Download an attachment from the school homepage (https only) and open it with a viewer app. */
+    @JavascriptInterface
+    public String openWebFile(String url, String name) {
+        if (url == null || !url.startsWith("https://")) return err("https 주소만 열 수 있습니다");
+        return downloadAndOpen(url, Util.sha256(url).substring(0, 12), name, "");
+    }
+
+    private String downloadAndOpen(String src, String key, String name, String mime) {
         new Thread(() -> {
             try {
                 File dir = new File(act.getCacheDir(), "open");
                 dir.mkdirs();
-                File f = new File(dir, Util.safeName(fileId + "_" + name));
+                File f = new File(dir, Util.safeName(key + "_" + name));
                 if (!f.exists()) {
-                    HttpURLConnection c = (HttpURLConnection) new URL("http://127.0.0.1:" + DeviceConfig.PORT + "/api/files/" + fileId).openConnection();
+                    HttpURLConnection c = (HttpURLConnection) new URL(src).openConnection();
+                    c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) ClassBoardOS/1.0");
+                    c.setInstanceFollowRedirects(true);
                     c.setConnectTimeout(5000);
                     c.setReadTimeout(60000);
                     if (c.getResponseCode() != 200) throw new Exception("다운로드 실패 (" + c.getResponseCode() + ")");

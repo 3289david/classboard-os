@@ -50,6 +50,7 @@ public class Router implements HttpServer.Handler {
         if (p.startsWith("/api/")) {
             HubApi h = hub;
             if (h != null && "/api/shared".equals(p)) return Response.json(fetcher.shared());
+            if (h != null && "/api/homepage/detail".equals(p)) return homepageDetail(r);
             if (h != null) return h.handle(r);
             if ("/api/state".equals(p)) return sync.serveState(r);
             return sync.proxy(r);
@@ -208,8 +209,24 @@ public class Router implements HttpServer.Handler {
             Util.put(out, "timetable", Util.jo("source", "neis", "fetchedAt", n.optLong("fetchedAt"), "times", new JSONArray(),
                     "weeks", new JSONArray().put(Util.jo("start", n.optJSONArray("dates") == null ? "" : n.optJSONArray("dates").optString(0), "dates", n.optJSONArray("dates"), "days", n.optJSONArray("days")))));
         }
-        for (String k : new String[]{"meals", "schedule", "weather", "feeds", "errors"}) if (d.has(k)) Util.put(out, k, d.opt(k));
+        for (String k : new String[]{"meals", "schedule", "weather", "feeds", "homepage", "errors"}) if (d.has(k)) Util.put(out, k, d.opt(k));
         return out;
+    }
+
+    /** One post of the school homepage (fetched by the hub so classroom boards only need the LAN). */
+    private Response homepageDetail(Request r) throws Exception {
+        JSONObject hp = fetcher.get().optJSONObject("homepage");
+        String base = hp == null ? "" : hp.optString("base");
+        if (base.isEmpty()) throw new ApiException(404, "학교 홈페이지가 연결되지 않았습니다");
+        String menuId = r.param("menuId"), bbsId = r.param("bbsId"), nttId = r.param("nttId");
+        if (menuId == null || !menuId.matches("\\d+") || bbsId == null || !bbsId.matches("[A-Za-z0-9_]+") || nttId == null || !nttId.matches("\\d+")) {
+            throw new ApiException(400, "잘못된 게시물 요청");
+        }
+        try {
+            return Response.json(SchoolHomepage.detail(base, menuId, bbsId, nttId, "1".equals(r.param("sen"))));
+        } catch (java.io.IOException e) {
+            throw new ApiException(502, "학교 홈페이지에 연결할 수 없습니다: " + e.getMessage());
+        }
     }
 
     private JSONObject comciTeachers() {

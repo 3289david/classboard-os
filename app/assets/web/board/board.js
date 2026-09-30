@@ -490,10 +490,14 @@
       html += '<div class="section-t" style="margin-top:.8rem">' + ic('link') + '학교 홈페이지</div>' + feeds.slice(0, 8).map((f) =>
         '<div class="notice"><div class="t" style="font-size:1.15rem">' + esc(f.title) + '</div><div class="m"><span>' + esc(f.source) + '</span><span>' + esc(f.date) + '</span></div></div>').join('');
     }
-    if (compact && (all.length > 3 || feeds.length)) html += '<button class="more-link" data-all-notices>전체 공지 ' + (all.length + feeds.length) + '건 보기</button>';
+    if (compact && list.length < 3) html += homepageLatest(3 - list.length).map((it) => hpRow(it, false)).join('');
+    if (compact && homepageBoards().length) html += '<button class="more-link" data-hp-all>가정통신문 · 학교 공지 더보기</button>';
+    else if (compact && (all.length > 3 || feeds.length)) html += '<button class="more-link" data-all-notices>전체 공지 ' + (all.length + feeds.length) + '건 보기</button>';
     el.innerHTML = html || '<div class="empty">' + ic('megaphone') + '등록된 공지가 없습니다</div>';
     C.$$('[data-nid]', el).forEach((n) => { n.onclick = () => openNotice(n.dataset.nid); });
     C.$$('[data-all-notices]', el).forEach((b) => { b.onclick = () => openPanel('notices'); });
+    C.$$('[data-hp-all]', el).forEach((b) => { b.onclick = () => openPanel('homepage'); });
+    bindHp(el);
     const cnt = $('#n-count');
     if (cnt && el.id === 'c-notices') cnt.innerHTML = all.length ? '<span class="chip">' + all.length + '</span>' : '';
   }
@@ -617,6 +621,80 @@
     const other = (a.absent || 0) + (a.late || 0) + (a.early || 0);
     mini(el, 'users', '오늘 출석', (a.present || 0) + ' / ' + cs.rosterSize, other ? '결석 ' + (a.absent || 0) + ' · 지각 ' + (a.late || 0) + ' · 조퇴 ' + (a.early || 0) : '눌러서 QR 출석');
     el.onclick = () => openQrBig('att');
+  }
+
+  // ---------------------------------------------------------------- school homepage (공지사항 · 가정통신문)
+  /** Boards ordered 가정통신문 first; posts newest first, with pinned posts from the last 60 days on top. */
+  function homepageBoards() {
+    const hp = S.data && S.data.homepage;
+    const rank = (n) => (n === '가정통신문' ? 0 : n.indexOf('가정통신문') >= 0 ? 1 : 2);
+    const recent = C.addDays(C.today(), -60);
+    return ((hp && hp.boards) || []).slice().sort((a, b) => rank(a.name) - rank(b.name)).map((b) => Object.assign({}, b, {
+      items: (b.items || []).slice().sort((x, y) => ((y.pinned && y.date >= recent) - (x.pinned && x.date >= recent)) || (x.date < y.date ? 1 : x.date > y.date ? -1 : 0)),
+    }));
+  }
+
+  /** Newest homepage posts across boards (pinned posts older than 30 days are skipped). */
+  function homepageLatest(n) {
+    const cutoff = C.addDays(C.today(), -30);
+    const all = [];
+    homepageBoards().forEach((b) => (b.items || []).forEach((it) => {
+      if (it.pinned && it.date < cutoff) return;
+      all.push(Object.assign({ board: b.name, menuId: b.menuId }, it));
+    }));
+    all.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    return all.slice(0, n);
+  }
+
+  function hpRow(it, big) {
+    return '<div class="notice compact" data-hp="' + esc(it.menuId + '|' + it.bbsId + '|' + it.nttId + '|' + (it.sen ? 1 : 0)) + '"><div class="t"' + (big ? '' : ' style="font-size:1.3rem"') + '>' + (it.pinned ? ic('pinned') : '') + esc(it.title) + '</div>' +
+      '<div class="b">' + esc(it.board || '') + ' · ' + esc(it.date) + (it.file ? ' · 첨부파일' : '') + '</div></div>';
+  }
+
+  function bindHp(el) {
+    C.$$('[data-hp]', el).forEach((n) => {
+      n.onclick = () => { const p = n.dataset.hp.split('|'); openPanel('hpost', { menuId: p[0], bbsId: p[1], nttId: p[2], sen: p[3] }); };
+    });
+  }
+
+  function renderHomepagePanel() {
+    const body = $('#p-body');
+    const boards = homepageBoards();
+    const err = S.data && S.data.errors && S.data.errors.homepage;
+    if (!boards.length) {
+      body.innerHTML = '<div class="empty">' + ic('info') + (err ? esc(err.message) : '관리자 설정에서 학교 홈페이지를 연결하면 공지사항과 가정통신문이 표시됩니다') + '</div>';
+      return;
+    }
+    const pick = S.panelOpts.menuId || boards[0].menuId;
+    const b = boards.find((x) => x.menuId === pick) || boards[0];
+    $('#p-tools').innerHTML = '<div class="tabs">' + boards.map((x) => '<button class="' + (x === b ? 'on' : '') + '" data-mid="' + esc(x.menuId) + '">' + esc(x.name) + '</button>').join('') + '</div>';
+    C.$$('[data-mid]').forEach((x) => { x.onclick = () => openPanel('homepage', { menuId: x.dataset.mid }); });
+    body.innerHTML = (b.items || []).map((it) => hpRow(Object.assign({ board: b.name, menuId: b.menuId }, it), true)).join('') +
+      '<div class="src">' + esc(b.name) + ' 전체 ' + (b.total || 0) + '건 · 최근 ' + (b.items || []).length + '건 표시 · ' + C.ago(S.data.homepage.fetchedAt) + ' 갱신</div>';
+    bindHp(body);
+  }
+
+  async function renderHomepagePost() {
+    const o = S.panelOpts;
+    const body = $('#p-body');
+    $('#p-tools').innerHTML = '<button class="btn" id="hp-back">' + ic('left') + '목록</button>';
+    $('#hp-back').onclick = () => openPanel('homepage', { menuId: o.menuId });
+    const it = homepageBoards().reduce((f, b) => f || (b.items || []).find((x) => x.nttId === o.nttId), null);
+    body.innerHTML = '<div class="empty">' + ic('refresh') + '학교 홈페이지에서 불러오는 중...</div>';
+    try {
+      const d = await C.get('/api/homepage/detail?menuId=' + encodeURIComponent(o.menuId) + '&bbsId=' + encodeURIComponent(o.bbsId) + '&nttId=' + encodeURIComponent(o.nttId) + '&sen=' + (o.sen === '1' ? 1 : 0));
+      if (S.panel !== 'hpost' || S.panelOpts !== o) return;
+      body.innerHTML = '<h1 style="font-size:2.4rem;margin-bottom:.6rem">' + esc(d.title || (it && it.title) || '') + '</h1>' +
+        '<p class="muted" style="margin-bottom:1.4rem">' + esc(it ? it.date + ' · ' + it.author : '') + '</p>' +
+        (d.files.length ? '<div class="mats" style="margin-bottom:1.4rem">' + d.files.map((f, i) => '<button class="mat" data-f="' + i + '">' + ic(fileIcon(f.name)) + esc(f.name) + ' <span class="dim">' + C.bytes(f.size) + '</span></button>').join('') + '</div>' : '') +
+        (d.body ? '<div style="font-size:1.5rem;line-height:1.6;white-space:pre-wrap">' + esc(d.body) + '</div>' : '') +
+        d.images.map((src) => '<img src="' + esc(src) + '" alt="" style="max-width:100%;margin-top:1rem;border-radius:.6rem;background:#fff">').join('');
+      C.$$('[data-f]', body).forEach((b) => {
+        b.onclick = () => { const f = d.files[Number(b.dataset.f)]; toast('"' + f.name + '" 여는 중...'); native('openWebFile', f.url, f.name); };
+      });
+    } catch (e) {
+      body.innerHTML = '<div class="empty">' + ic('alert') + esc(e.message) + '</div>';
+    }
   }
 
   // ---------------------------------------------------------------- lesson view
@@ -799,7 +877,7 @@
     const rec = S.sys && S.sys.device && S.sys.device.recording;
     const tools = [
       ['tt', 'clock', '시간표', '오늘 · 다음 수업일'], ['meal', 'meal', '급식', '조식 · 중식 · 석식, 알레르기'], ['exams', 'calendar', '시험 · 학사 일정', 'D-day, 시험 범위'],
-      ['hw', 'backpack', '준비물 · 과제', ''], ['notices', 'megaphone', '전체 공지', ''], ['room', 'door', '교실 정보', '담당 선생님 · 특별실'],
+      ['homepage', 'file', '가정통신문', '학교 홈페이지 공지사항 · 가정통신문'], ['hw', 'backpack', '준비물 · 과제', ''], ['notices', 'megaphone', '전체 공지', ''], ['room', 'door', '교실 정보', '담당 선생님 · 특별실'],
       ['contacts', 'phone', '교내 연락처', ''], ['files', 'usb', '파일 · USB', ''], ['split', 'split', '화면 분할', ''],
       ['!shot', 'camera', '화면 캡처', '사진/ClassBoard'], ['!rec', rec ? 'stop' : 'rec', rec ? '녹화 중지' : '화면 녹화', '동영상/ClassBoard'], ['portal', 'lock', '관리자', '공지 · 수업 화면 · 출석 관리'],
     ];
@@ -869,7 +947,7 @@
   }
   function refreshPanel() {
     const titles = { apps: '앱', split: '화면 분할로 열기', files: '파일 · USB', qr: 'QR 코드', room: '교실 정보', contacts: '교내 연락처', quick: '빠른 설정', settings: '설정', portal: '관리자',
-      notice: '공지', qrbig: 'QR', more: '더보기', tt: '시간표', meal: '급식', exams: '시험 · 학사 일정', hw: '준비물 · 과제', notices: '전체 공지' };
+      notice: '공지', qrbig: 'QR', more: '더보기', tt: '시간표', meal: '급식', exams: '시험 · 학사 일정', hw: '준비물 · 과제', notices: '전체 공지', homepage: '가정통신문 · 학교 공지', hpost: '가정통신문' };
     $('#p-title').textContent = titles[S.panel] || '';
     switch (S.panel) {
       case 'apps': renderApps(false); break;
@@ -889,6 +967,8 @@
       case 'exams': renderExamsPanel(); break;
       case 'hw': renderHomeworkPanel(); break;
       case 'notices': renderNotices($('#p-body'), true, false); break;
+      case 'homepage': renderHomepagePanel(); break;
+      case 'hpost': renderHomepagePost(); break;
       default: break;
     }
   }

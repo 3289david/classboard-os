@@ -72,6 +72,7 @@
         case '/att': return pageAttend(p.get('c'), p.get('t'));
         case '/read': return pageRead(p.get('n'), p.get('c'));
         case '/notices': return pageNotices(p.get('c'));
+        case '/hp': return pageHomepagePost(p.get('m'), p.get('b'), p.get('n'), p.get('s'));
         case '/officer': return pageOfficer(p.get('c'));
         case '/staff': return pageStaff();
         default: return pageHome();
@@ -125,6 +126,32 @@
     const list = C.noticesFor(state, cls);
     root.innerHTML = list.length ? list.map((n) => card((n.pinned ? ic('pinned') : ic('megaphone')) + esc(n.title), '<div class="muted" style="white-space:pre-wrap">' + esc(n.body || '') + '</div><div class="row" style="margin-top:.7rem"><span class="chip ' + (n.level === 'urgent' ? 'red' : n.level === 'class' ? 'blue' : 'orange') + '">' + esc(C.LEVEL[n.level] || '일반') + '</span><span class="dim">' + esc(n.author || '') + ' · ' + C.dateTime(n.createdAt) + '</span>' +
       (n.needRead ? '<a class="btn sm pri" href="#/read?n=' + n.id + '&c=' + cls + '" style="margin-left:auto">' + ic('check') + '읽음 확인</a>' : '') + '</div>')).join('') : card(ic('megaphone') + '공지', '<div class="empty">등록된 공지가 없습니다</div>');
+    homepageSection().then((h) => { if (route() === '/notices' && h) root.insertAdjacentHTML('beforeend', h); });
+  }
+
+  async function homepageSection() {
+    let d = null;
+    try { d = await C.get('/api/local/data', { token: '' }); } catch (e) { d = null; }
+    const boards = (d && d.homepage && d.homepage.boards) || [];
+    if (!boards.length) return '';
+    return boards.map((b) => card(ic('file') + esc(b.name), (b.items || []).map((it) =>
+      '<a class="item" style="text-decoration:none;color:inherit" href="#/hp?m=' + encodeURIComponent(b.menuId) + '&b=' + encodeURIComponent(it.bbsId) + '&n=' + encodeURIComponent(it.nttId) + '&s=' + (it.sen ? 1 : 0) + '">' +
+      '<div class="grow"><b>' + (it.pinned ? ic('pinned') + ' ' : '') + esc(it.title) + '</b><span class="sub">' + esc(it.date) + (it.file ? ' · 첨부파일' : '') + '</span></div></a>').join('') || '<div class="empty">게시물이 없습니다</div>')).join('');
+  }
+
+  async function pageHomepagePost(menuId, bbsId, nttId, sen) {
+    title('가정통신문');
+    root.innerHTML = card(ic('refresh') + '불러오는 중', '<div class="empty">학교 홈페이지에서 불러오는 중...</div>');
+    try {
+      const d = await C.get('/api/homepage/detail?menuId=' + encodeURIComponent(menuId) + '&bbsId=' + encodeURIComponent(bbsId) + '&nttId=' + encodeURIComponent(nttId) + '&sen=' + (sen === '1' ? 1 : 0), { token: '' });
+      root.innerHTML = card(ic('file') + esc(d.title || '가정통신문'),
+        (d.files.length ? d.files.map((f) => '<div class="item">' + ic('download') + '<div class="grow"><b>' + esc(f.name) + '</b><span class="sub">' + C.bytes(f.size) + '</span></div><a class="btn sm pri" href="' + esc(f.url) + '" target="_blank" rel="noopener">받기</a></div>').join('') : '') +
+        (d.body ? '<div style="white-space:pre-wrap;margin-top:.8rem">' + esc(d.body) + '</div>' : '') +
+        d.images.map((src) => '<img src="' + esc(src) + '" alt="" style="max-width:100%;margin-top:.8rem;border-radius:.5rem">').join('') +
+        '<p class="dim" style="margin-top:1rem"><a href="' + esc(d.url) + '" target="_blank" rel="noopener">학교 홈페이지에서 보기</a></p>');
+    } catch (e) {
+      root.innerHTML = card(ic('alert') + '오류', '<p>' + esc(e.message) + '</p>');
+    }
   }
 
   function pageRead(nid, cls) {
@@ -552,6 +579,8 @@
         '<label>NEIS 인증키 (선택, open.neis.go.kr)<input id="nk" placeholder="' + (cfg.hasNeisKey ? '설정됨 - 바꿀 때만 입력' : '') + '"></label><button class="btn pri" id="gen-save">' + ic('check') + '저장</button></div>') +
       card(ic('pin') + '날씨 위치', '<div class="form"><div class="grid2"><label>위도<input id="lat" value="' + esc(cfg.lat == null ? '' : cfg.lat) + '"></label><label>경도<input id="lon" value="' + esc(cfg.lon == null ? '' : cfg.lon) + '"></label></div><label>표시 이름<input id="ln" value="' + esc(cfg.locationName || '') + '"></label>' +
         '<div class="row"><input id="geo-q" placeholder="주소 또는 학교 이름으로 찾기" style="flex:1"><button class="btn" id="geo-go">' + ic('search') + '찾기</button></div><div id="geo-res"></div><button class="btn pri" id="geo-save">' + ic('check') + '위치 저장</button></div>') +
+      card(ic('file') + '학교 홈페이지 (공지사항 · 가정통신문)', '<p class="dim">서울 학교 홈페이지(sen.ms.kr, sen.hs.kr, sen.es.kr 등)의 공지사항과 가정통신문 게시판을 자동으로 찾아 전자칠판에 표시합니다. 비우면 NEIS에 등록된 홈페이지 주소를 사용합니다.</p>' +
+        '<div class="form"><label>홈페이지 주소<input id="hp-url" value="' + esc(cfg.homepageUrl || '') + '" placeholder="' + esc((cfg.school && cfg.school.homepage) || '예: joongdong.sen.ms.kr') + '"></label><button class="btn pri" id="hp-save">' + ic('check') + '저장</button></div>') +
       card(ic('link') + '학교 홈페이지 공지 (RSS)', '<p class="dim">학교 홈페이지 게시판의 RSS 주소를 등록하면 전자칠판 공지에 함께 표시됩니다. 한 줄에 "이름 | RSS 주소".</p><textarea id="feeds">' + esc(feeds.map((f) => f.name + ' | ' + f.url).join('\n')) + '</textarea><button class="btn pri" id="feeds-save" style="margin-top:.6rem">' + ic('check') + '저장</button>');
     let pick = { school: null, comci: null };
     $('#sc-go').onclick = async () => {
@@ -590,6 +619,9 @@
     $('#geo-save').onclick = async () => {
       const lat = parseFloat(val('lat')), lon = parseFloat(val('lon'));
       try { await post('/api/admin/config', { lat: isNaN(lat) ? null : lat, lon: isNaN(lon) ? null : lon, locationName: val('ln') }); toast('저장했습니다'); } catch (e) { toast(e.message); }
+    };
+    $('#hp-save').onclick = async () => {
+      try { await post('/api/admin/config', { homepageUrl: val('hp-url') || null }); await C.post('/api/local/refresh', {}).catch(() => {}); toast('저장했습니다. 게시판을 불러옵니다'); } catch (e) { toast(e.message); }
     };
     $('#feeds-save').onclick = async () => {
       const f = val('feeds').split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const p = l.split('|'); return p.length > 1 ? { name: p[0].trim(), url: p.slice(1).join('|').trim() } : { name: '홈페이지', url: l }; });

@@ -107,7 +107,7 @@ main { position: relative; overflow: hidden; padding: .4rem 1.8rem 1rem; }
 /* home: two calm columns - "now" on the left, notices / lunch / three glanceable tiles on the right */
 #v-home { grid-template-columns: 1.35fr 1fr; gap: 1.4rem; }
 .home-left { display: grid; grid-template-rows: 1fr auto; gap: 1.4rem; min-height: 0; }
-.home-right { display: grid; grid-template-rows: 1fr 1fr auto; gap: 1.4rem; min-height: 0; }
+.home-right { display: grid; grid-template-rows: 1.45fr .75fr auto; gap: 1.4rem; min-height: 0; }
 #v-home .now { justify-content: center; padding: 2.6rem 3rem; }
 #v-home .now .subj { font-size: 5rem; }
 #v-home .now .ring { width: 13rem; height: 13rem; }

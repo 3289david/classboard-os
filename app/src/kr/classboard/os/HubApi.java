@@ -543,7 +543,7 @@ public class HubApi {
     private Response saveConfig(Request r) throws Exception {
         requireSetupOrAdmin(r);
         JSONObject b = r.json();
-        String[] allowed = {"school", "comci", "periodMinutes", "bell", "lat", "lon", "locationName", "neisKey", "feeds", "displayName", "lunchAfter", "dayEnd"};
+        String[] allowed = {"school", "comci", "periodMinutes", "bell", "lat", "lon", "locationName", "neisKey", "feeds", "displayName", "homepageUrl", "homepageBoards"};
         store.write(root -> {
             JSONObject cfg = Util.obj(root, "config");
             for (String k : allowed) {
