@@ -1,0 +1,13 @@
+# server 폴더에서 실행: docker compose up -d --build
+# NEIS 인증키는 같은 폴더의 .env 파일에 NEIS_KEY=... 로 적어 두세요 (저장소에 올리지 않음).
+services:
+  jdms-server:
+    build: .
+    restart: always            # 서버 재부팅 · 오류 시 자동 재시작 (24시간 운영)
+    ports:
+      - "8080:8080"
+    environment:
+      - NEIS_KEY=${NEIS_KEY:-}
+      - STATUS_KEY=${STATUS_KEY:-}
+    volumes:
+      - ./data:/data

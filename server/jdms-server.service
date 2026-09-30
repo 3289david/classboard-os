@@ -1,0 +1,22 @@
+# Docker 없이 리눅스 서버에서 24시간 실행할 때 (systemd)
+# 1) sudo mkdir -p /opt/jdms-server && sudo cp dist/jdms-server.jar /opt/jdms-server/
+# 2) sudo cp server/jdms-server.service /etc/systemd/system/
+# 3) sudo systemctl daemon-reload && sudo systemctl enable --now jdms-server
+[Unit]
+Description=중동중학교 전자칠판 데이터 서버
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/jdms-server
+Environment=PORT=8080
+Environment=DATA_DIR=/opt/jdms-server/data
+Environment=TZ=Asia/Seoul
+# NEIS 인증키는 /opt/jdms-server/secrets/neis.key 파일이나 아래 줄로 지정
+#Environment=NEIS_KEY=발급받은_키
+ExecStart=/usr/bin/java -Xmx256m -jar /opt/jdms-server/jdms-server.jar
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

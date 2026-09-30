@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>중동중학교</title>
+<link rel="stylesheet" href="board.css">
+</head>
+<body>
+<div class="boot" id="boot">
+  <div class="boot-mark"><svg viewBox="0 0 64 64" aria-hidden="true">
+    <path class="frame" d="M10 12h44a4 4 0 0 1 4 4v24a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4V16a4 4 0 0 1 4-4z"/>
+    <path class="stand" d="M32 44v8M22 54h20"/>
+    <path class="line l1" d="M15 22h18"/><path class="line l2" d="M15 29h12"/><path class="line l3" d="M15 36h22"/>
+  </svg></div>
+  <div class="boot-title">중동중학교</div>
+  <div class="boot-bar"><i></i></div>
+  <div class="boot-status" id="boot-status">시작하는 중</div>
+</div>
+
+<div id="app">
+  <header class="top">
+    <span class="sb-time" id="t-time"></span>
+    <div class="school"><span class="name" id="t-school"></span><span class="cls" id="t-class"></span></div>
+    <div class="spacer"></div>
+    <div class="status" id="t-status"></div>
+    <div class="weather" id="t-weather"></div>
+  </header>
+
+  <main>
+    <section class="view" id="v-home">
+      <div class="pages" id="pages">
+        <div class="page pg-glance">
+          <div class="glance"><div class="g-time" id="g-time"></div><div class="g-date" id="g-date"></div><div class="g-wx" id="g-wx"></div></div>
+          <div class="card now" id="c-now"></div>
+          <div class="tt-strip" id="c-tt"></div>
+        </div>
+        <div class="page pg-info">
+          <div class="card plain"><h3 id="n-head"><span data-ic="file"></span>가정통신문 · 학교 소식<span class="right" data-ic="right"></span></h3><div class="body" id="c-notices"></div></div>
+          <div class="col">
+            <div class="card plain meal"><h3><span data-ic="meal"></span><span id="meal-title">급식</span><span class="right tabs" id="meal-tabs"></span></h3><div class="body" id="c-meal"></div></div>
+            <div class="mini-row">
+              <button class="mini" id="c-exam"></button>
+              <button class="mini" id="c-wx"></button>
+              <button class="mini" id="c-next"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="page-dots" id="dots"></div>
+      <nav class="home-dock" id="dock"></nav>
+    </section>
+
+    <section class="view" id="v-lesson">
+      <div class="lesson-main" id="l-main"></div>
+      <div class="lesson-side">
+        <div class="timer" id="l-timer"></div>
+        <div class="card"><h3><span data-ic="clock"></span>오늘 시간표</h3><div class="body" id="l-tt"></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-break">
+      <div class="break-hero" id="b-hero"></div>
+      <div class="break-side">
+        <div class="card" id="b-weather"></div>
+        <div class="card"><h3><span data-ic="file"></span>가정통신문 · 학교 소식</h3><div class="body" id="b-side"></div></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="navbar" id="navkeys"></footer>
+
+  <!-- full-screen app window -->
+  <div class="panel" id="panel">
+    <div class="ph"><span class="ph-icon" id="p-icon"></span><h2 id="p-title"></h2><div class="grow" id="p-tools"></div><button class="close" id="p-close" aria-label="닫기"></button></div>
+    <div class="pb" id="p-body"></div>
+  </div>
+
+  <!-- recent apps -->
+  <div class="recents" id="recents"></div>
+</div>
+
+<div class="class-alert" id="class-alert"></div>
+<div class="edge-flash" id="edge-flash"></div>
+<div class="toast" id="toast"></div>
+<div class="setup" id="setup"><div class="box" id="setup-box"></div></div>
+<div class="sleep" id="sleep"></div>
+
+<script src="../shared/icons.js"></script>
+<script src="../shared/core.js"></script>
+<script src="board.js"></script>
+</body>
+</html>

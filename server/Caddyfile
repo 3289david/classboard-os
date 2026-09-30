@@ -1,0 +1,11 @@
+# HTTPS 인증서를 자동으로 받아 jdmsosserver.krl.kr -> 데이터 서버(8080)로 연결합니다.
+# 도메인의 DNS A 레코드가 이 서버 IP를 가리켜야 합니다.
+jdmsosserver.krl.kr {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080 {
+		# 전자칠판은 20초 롱 폴링으로 변경을 기다립니다
+		transport http {
+			read_timeout 60s
+		}
+	}
+}

@@ -14,3 +14,6 @@ Thumbs.db
 
 # API 키 (빌드할 때만 사용, 저장소에 올리지 않음)
 secrets/
+.env
+server/data/
+server/lib/
