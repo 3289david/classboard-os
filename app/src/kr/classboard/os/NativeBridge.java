@@ -123,7 +123,7 @@ public class NativeBridge {
             return ok();
         }
         BoardAccessibility svc = BoardAccessibility.get();
-        if (svc == null) return err("화면 분할을 사용하려면 설정에서 '교실 OS' 접근성 서비스를 켜 주세요");
+        if (svc == null) return err("화면 분할을 사용하려면 설정에서 '중동중학교' 접근성 서비스를 켜 주세요");
         act.runOnUiThread(() -> {
             svc.toggleSplit();
             act.getWindow().getDecorView().postDelayed(() -> act.startActivity(i), 900);

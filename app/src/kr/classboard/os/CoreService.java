@@ -109,12 +109,12 @@ public class CoreService extends Service {
     private void startInForeground() {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26) {
-            nm.createNotificationChannel(new NotificationChannel("core", "교실 OS 실행 상태", NotificationManager.IMPORTANCE_MIN));
+            nm.createNotificationChannel(new NotificationChannel("core", "중동중학교 전자칠판 실행 상태", NotificationManager.IMPORTANCE_MIN));
         }
         Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE);
         Notification n = new Notification.Builder(this, "core")
-                .setContentTitle("교실 OS 실행 중")
+                .setContentTitle("중동중학교 전자칠판 실행 중")
                 .setContentText("학교 서버 연결 및 알림 수신")
                 .setSmallIcon(R.drawable.ic_stat)
                 .setContentIntent(pi)
@@ -403,7 +403,7 @@ public class CoreService extends Service {
                     bringHome();
                     MainActivity.notifyWeb("recents", "{}");
                 } else {
-                    ui.post(() -> android.widget.Toast.makeText(this, "뒤로 · 최근 앱 버튼은 설정에서 '교실 OS' 접근성 서비스를 켜야 동작합니다", android.widget.Toast.LENGTH_LONG).show());
+                    ui.post(() -> android.widget.Toast.makeText(this, "뒤로 · 최근 앱 버튼은 설정에서 '중동중학교' 접근성 서비스를 켜야 동작합니다", android.widget.Toast.LENGTH_LONG).show());
                 }
                 break;
             default:

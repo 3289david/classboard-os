@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">교실 OS</string>
+    <string name="app_name">중동중학교</string>
     <string name="a11y_desc">전자칠판에서 앱을 화면 분할로 열 때만 사용합니다. 화면 내용을 읽거나 저장하지 않습니다.</string>
     <color name="icon_bg">#FF2F5BD3</color>
 </resources>

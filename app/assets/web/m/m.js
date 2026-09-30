@@ -28,7 +28,7 @@
     clearTimeout(toast._t);
     toast._t = setTimeout(() => t.classList.remove('on'), ms || 3000);
   }
-  function title(t) { $('#title').textContent = t; document.title = t + ' · 교실 OS'; }
+  function title(t) { $('#title').textContent = t; document.title = t + ' · 중동중학교'; }
   function params() { const h = location.hash; const i = h.indexOf('?'); return new URLSearchParams(i >= 0 ? h.slice(i + 1) : ''); }
   function route() { const h = location.hash.replace(/^#/, ''); return (h.split('?')[0] || '/'); }
   function classLabel(c) { if (!c) return ''; const p = c.split('-'); return p[0] + '학년 ' + p[1] + '반'; }
@@ -84,7 +84,7 @@
   window.addEventListener('hashchange', render);
 
   function pageHome() {
-    title((state && state.config && (state.config.displayName || (state.config.school && state.config.school.name))) || '교실 OS');
+    title((state && state.config && (state.config.displayName || (state.config.school && state.config.school.name))) || '중동중학교');
     const c = localStorage.getItem('cb_last_cls') || '';
     root.innerHTML = '<div class="big-choice">' +
       '<button data-go="#/staff">' + ic('lock') + '<div><b>관리자</b><span>공지, 오늘의 수업, 출석, 학급, 긴급 알림, 학교 설정</span></div></button>' +

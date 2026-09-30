@@ -1306,7 +1306,7 @@
     if (N) { try { apps = JSON.parse(N.apps()); } catch (e) { apps = []; } }
     const rules = st.launchRules || [];
     const permRows = [
-      ['defaultHome', '기본 홈 앱', '전원을 켜면 교실 OS가 바로 뜨도록 기본 홈 앱으로 지정', 'home'],
+      ['defaultHome', '기본 홈 앱', '전원을 켜면 중동중학교 화면이 바로 뜨도록 기본 홈 앱으로 지정', 'home'],
       ['overlay', '다른 앱 위에 표시', '긴급 알림 · 임원 알림 · 화면 메모를 다른 앱 위에 표시', 'overlay'],
       ['writeSettings', '시스템 설정 변경', '밝기 조절', 'writeSettings'],
       ['accessibility', '접근성 서비스', '화면 분할 실행', 'accessibility'],
@@ -1388,7 +1388,7 @@
     S.inWizard = true; // stay in the wizard until it finishes, even when the device config changes underneath
 
     function stepRole() {
-      box.innerHTML = '<h1>교실 OS 시작하기</h1><p class="lead">이 전자칠판의 역할을 선택하세요. 학교에 한 대만 "학교 서버"로 두고 나머지는 "교실 단말"로 연결합니다. 인터넷이 끊겨도 같은 교내 네트워크 안에서는 알림이 동작합니다.</p>' +
+      box.innerHTML = '<h1>중동중학교 전자칠판 시작하기</h1><p class="lead">이 전자칠판의 역할을 선택하세요. 학교에 한 대만 "학교 서버"로 두고 나머지는 "교실 단말"로 연결합니다. 인터넷이 끊겨도 같은 교내 네트워크 안에서는 알림이 동작합니다.</p>' +
         '<div class="choice"><button data-r="hub">' + ic('school') + '<b>학교 서버 (허브)</b><span>공지 · 긴급 알림 · 계정 · 학급 데이터를 보관합니다. 교무실 등 항상 켜 두는 기기에 권장합니다.</span></button>' +
         '<button data-r="client">' + ic('monitor') + '<b>교실 단말</b><span>교내 네트워크의 학교 서버에 연결해 시간표 · 공지 · 알림을 표시합니다.</span></button></div>';
       C.$$('[data-r]', box).forEach((b) => { b.onclick = () => { W.role = b.dataset.r; stepDevice(); }; });
