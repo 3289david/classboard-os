@@ -208,6 +208,20 @@ public final class Comcigan {
         }
         Util.put(out, "classCounts", classCounts);
 
+        // Homeroom teacher per class: "담임"[grade-1][class-1] is an index into the teacher list.
+        JSONObject homerooms = new JSONObject();
+        JSONArray hr = first.optJSONArray("담임");
+        JSONArray cn = classCounts.names();
+        for (int gi = 0; hr != null && cn != null && gi < cn.length(); gi++) {
+            int g = Integer.parseInt(cn.getString(gi));
+            JSONArray row = hr.optJSONArray(g - 1);
+            for (int c = 1; row != null && c <= classCounts.optInt(cn.getString(gi)); c++) {
+                String name = teacherName(teachers, row.optInt(c - 1));
+                if (!name.isEmpty()) Util.put(homerooms, g + "-" + c, name);
+            }
+        }
+        Util.put(out, "homerooms", homerooms);
+
         JSONArray weeksOut = new JSONArray();
         for (int w : weeks) {
             JSONObject raw = w == 1 ? first : fetchRaw(r, code, w);

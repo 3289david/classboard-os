@@ -18,19 +18,18 @@
 
   <main>
     <section class="view" id="v-home">
-      <div class="col col1">
+      <div class="home-left">
         <div class="card now" id="c-now"></div>
-        <div class="card"><h3><span id="tt-icon"></span><span id="tt-title">시간표</span><span class="right tabs" id="tt-tabs"><button data-d="0" class="on">오늘</button><button data-d="1">다음 수업일</button></span></h3><div class="body" id="c-tt"></div></div>
+        <div class="tt-strip" id="c-tt"></div>
       </div>
-      <div class="col col2">
-        <div class="card"><h3><span data-ic="megaphone"></span>학교 공지<span class="right" id="n-count"></span></h3><div class="body" id="c-notices"></div></div>
-        <div class="card"><h3><span data-ic="backpack"></span>준비물 / 과제</h3><div class="body" id="c-hw"></div></div>
-        <div class="card"><h3><span data-ic="exam"></span>시험 D-day</h3><div class="body" id="c-dday"></div></div>
-      </div>
-      <div class="col col3">
+      <div class="home-right">
+        <div class="card"><h3><span data-ic="megaphone"></span>공지<span class="right" id="n-count"></span></h3><div class="body" id="c-notices"></div></div>
         <div class="card meal"><h3><span data-ic="meal"></span><span id="meal-title">급식</span><span class="right tabs" id="meal-tabs"></span></h3><div class="body" id="c-meal"></div></div>
-        <div class="card"><h3><span data-ic="calendar"></span>학사 일정</h3><div class="body" id="c-events"></div></div>
-        <div class="card" id="c-att-card"><h3><span data-ic="users"></span>오늘 출석<span class="right"><button class="btn sm" id="att-qr-btn"></button></span></h3><div id="c-att"></div></div>
+        <div class="mini-row">
+          <button class="mini" id="c-hw"></button>
+          <button class="mini" id="c-dday"></button>
+          <button class="mini" id="c-att"></button>
+        </div>
       </div>
     </section>
 
@@ -54,6 +53,7 @@
   <footer class="bottom">
     <div class="navkeys" id="navkeys"></div>
     <nav class="dock" id="dock"></nav>
+    <div class="sys-keys" id="syskeys"></div>
   </footer>
 
   <div class="scrim" id="scrim"></div>
@@ -62,7 +62,6 @@
 
 <div class="emergency" id="emergency"><div class="badge"><span data-ic="alert"></span><span id="em-title">긴급 안내</span></div><div class="txt" id="em-text"></div><div class="meta" id="em-meta"></div><button id="em-ack">확인</button></div>
 <div class="class-alert" id="class-alert"></div>
-<div class="ticker" id="ticker"><span class="live"><i></i>방송</span><span class="cap" id="ticker-cap"></span></div>
 <div class="toast" id="toast"></div>
 <div class="setup" id="setup"><div class="box" id="setup-box"></div></div>
 <div class="sleep" id="sleep"></div>

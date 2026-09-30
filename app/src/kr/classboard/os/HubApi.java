@@ -154,7 +154,7 @@ public class HubApi {
         JSONObject p = new JSONObject();
         String today = Util.today();
         for (String k : new String[]{"config", "notices", "alerts", "homework", "lessons", "exams", "events", "contacts", "rooms",
-                "overrides", "broadcast", "lessonNow", "assignments"}) {
+                "overrides", "lessonNow"}) {
             if (root.has(k)) Util.put(p, k, root.opt(k));
         }
         JSONObject cfg = p.optJSONObject("config");
@@ -239,33 +239,10 @@ public class HubApi {
             Util.put(p, "notices", nn);
         }
 
-        // surveys with tallies only
-        JSONArray sv = root.optJSONArray("surveys");
-        JSONArray svOut = new JSONArray();
-        for (int i = 0; sv != null && i < sv.length(); i++) {
-            JSONObject s = Util.copy(sv.optJSONObject(i));
-            JSONObject resp = s.optJSONObject("responses");
-            JSONArray opts = s.optJSONArray("options");
-            int[] tally = new int[opts == null ? 0 : opts.length()];
-            JSONArray rn = resp == null ? null : resp.names();
-            for (int j = 0; rn != null && j < rn.length(); j++) {
-                int o = resp.optInt(rn.optString(j), -1);
-                if (o >= 0 && o < tally.length) tally[o]++;
-            }
-            JSONArray t = new JSONArray();
-            for (int x : tally) t.put(x);
-            s.remove("responses");
-            Util.put(s, "tally", t);
-            Util.put(s, "responseCount", rn == null ? 0 : rn.length());
-            svOut.put(s);
-        }
-        Util.put(p, "surveys", svOut);
-
         JSONArray files = new JSONArray();
         JSONArray rf = root.optJSONArray("files");
         for (int i = 0; rf != null && i < rf.length(); i++) {
             JSONObject f = rf.optJSONObject(i);
-            if ("submission".equals(f.optString("kind"))) continue;
             files.put(f);
         }
         Util.put(p, "files", files);
@@ -361,10 +338,8 @@ public class HubApi {
                 return teacherCalls(r);
             case "/api/teacher/calls/ack":
                 return teacherCallAck(r);
-            case "/api/broadcast":
-                return broadcast(r);
             case "/api/files":
-                return upload(r, false);
+                return upload(r);
             case "/api/device/hello":
                 return deviceHello(r);
             case "/api/device/att-token":
@@ -377,10 +352,6 @@ public class HubApi {
                 return studentRead(r);
             case "/api/student/attend":
                 return studentAttend(r);
-            case "/api/student/vote":
-                return studentVote(r);
-            case "/api/student/submit":
-                return upload(r, true);
             default:
                 break;
         }
@@ -477,7 +448,7 @@ public class HubApi {
     }
 
     private Response changePin(Request r) throws Exception {
-        JSONObject s = require(r, "admin", "teacher", "broadcast");
+        JSONObject s = requireStaff(r);
         JSONObject b = r.json();
         String np = b.optString("newPin");
         if (np.length() < 4) throw err(400, "PIN은 4자리 이상이어야 합니다");
@@ -521,7 +492,7 @@ public class HubApi {
         String name = b.optString("name").trim();
         String role = b.optString("role");
         if (name.isEmpty()) throw err(400, "이름을 입력하세요");
-        if (!role.equals("admin") && !role.equals("teacher") && !role.equals("broadcast")) throw err(400, "역할이 올바르지 않습니다");
+        if (!role.equals("admin") && !role.equals("teacher")) throw err(400, "역할이 올바르지 않습니다");
         String pin = b.optString("pin");
         String id = b.optString("id");
         if (id.isEmpty() && pin.length() < 4) throw err(400, "새 계정은 4자리 이상 PIN이 필요합니다");
@@ -817,27 +788,6 @@ public class HubApi {
         return Response.ok();
     }
 
-    // ------------------------------------------------------------------ broadcast
-
-    private Response broadcast(Request r) throws Exception {
-        JSONObject s = require(r, "admin", "broadcast", "teacher");
-        JSONObject b = r.json();
-        store.write(root -> {
-            JSONObject bc = Util.obj(root, "broadcast");
-            if (b.has("live")) {
-                boolean live = b.optBoolean("live");
-                if (live && !bc.optBoolean("live")) Util.put(bc, "startedAt", now());
-                Util.put(bc, "live", live);
-            }
-            if (b.has("title")) Util.put(bc, "title", b.optString("title"));
-            if (b.has("caption")) Util.put(bc, "caption", b.optString("caption"));
-            if (b.has("lunch")) Util.put(bc, "lunch", b.optString("lunch"));
-            Util.put(bc, "updatedAt", now());
-            Util.put(bc, "author", s.optString("name"));
-        });
-        return Response.ok();
-    }
-
     // ------------------------------------------------------------------ generic collections
 
     private static final Map<String, String[]> COLLECTIONS = new HashMap<>();
@@ -850,8 +800,6 @@ public class HubApi {
         COLLECTIONS.put("exams", new String[]{"teacher"});
         COLLECTIONS.put("events", new String[]{"teacher"});
         COLLECTIONS.put("overrides", new String[]{"teacher"});
-        COLLECTIONS.put("surveys", new String[]{"teacher"});
-        COLLECTIONS.put("assignments", new String[]{"teacher"});
         COLLECTIONS.put("files", new String[]{"teacher"});
         COLLECTIONS.put("contacts", new String[]{"admin"});
         COLLECTIONS.put("rooms", new String[]{"admin"});
@@ -927,15 +875,6 @@ public class HubApi {
                 if (!it.optString("date").matches("\\d{4}-\\d{2}-\\d{2}")) throw err(400, "날짜를 입력하세요");
                 if (it.optString(coll.equals("exams") ? "subject" : "title").trim().isEmpty()) throw err(400, coll.equals("exams") ? "과목을 입력하세요" : "제목을 입력하세요");
                 break;
-            case "surveys":
-                clsOk(it.optString("cls"));
-                if (it.optString("question").trim().isEmpty()) throw err(400, "질문을 입력하세요");
-                if (it.optJSONArray("options") == null || it.optJSONArray("options").length() < 2) throw err(400, "선택지를 2개 이상 입력하세요");
-                break;
-            case "assignments":
-                clsOk(it.optString("cls"));
-                if (it.optString("title").trim().isEmpty()) throw err(400, "과제 제목을 입력하세요");
-                break;
             case "contacts":
                 if (it.optString("name").trim().isEmpty()) throw err(400, "이름(부서명)을 입력하세요");
                 break;
@@ -973,18 +912,6 @@ public class HubApi {
                         if (cls.equals(a.optString("cls"))) log.put(a);
                     }
                     JSONObject att = root.optJSONObject("attendance") == null ? new JSONObject() : root.optJSONObject("attendance").optJSONObject(cls);
-                    JSONArray subs = new JSONArray();
-                    JSONArray files = Util.arr(root, "files");
-                    for (int i = 0; i < files.length(); i++) {
-                        JSONObject f = files.optJSONObject(i);
-                        if ("submission".equals(f.optString("kind")) && cls.equals(f.optString("cls"))) subs.put(f);
-                    }
-                    JSONObject surveys = new JSONObject();
-                    JSONArray sv = Util.arr(root, "surveys");
-                    for (int i = 0; i < sv.length(); i++) {
-                        JSONObject x = sv.optJSONObject(i);
-                        if (cls.equals(x.optString("cls"))) Util.put(surveys, x.optString("id"), x.optJSONObject("responses") == null ? new JSONObject() : x.optJSONObject("responses"));
-                    }
                     JSONObject reads = new JSONObject();
                     JSONArray ns = Util.arr(root, "notices");
                     for (int i = 0; i < ns.length(); i++) {
@@ -994,7 +921,7 @@ public class HubApi {
                     }
                     return Util.jo("roster", c.optJSONArray("roster") == null ? new JSONArray() : c.optJSONArray("roster"), "officers", officers,
                             "officerSettings", officerSettings(c), "officerLog", log, "attendance", att == null ? new JSONObject() : att,
-                            "submissions", subs, "surveyResponses", surveys, "noticeReads", reads,
+                            "noticeReads", reads,
                             "subjectInfo", c.optJSONObject("subjectInfo") == null ? new JSONObject() : c.optJSONObject("subjectInfo"),
                             "homeroom", c.optString("homeroom"), "room", c.optString("room"));
                 }));
@@ -1162,53 +1089,16 @@ public class HubApi {
         return Response.json(Util.jo("result", result[0]));
     }
 
-    private Response studentVote(Request r) throws Exception {
-        JSONObject b = r.json();
-        String cls = clsOk(b.optString("cls"));
-        int no = b.optInt("no");
-        int opt = b.optInt("option", -1);
-        final String[] error = {null};
-        store.write(root -> {
-            if (!inRoster(root, cls, no)) { error[0] = "학급 명단에 없는 번호입니다"; return; }
-            JSONObject s = Util.findById(Util.arr(root, "surveys"), b.optString("surveyId"));
-            if (s == null || !cls.equals(s.optString("cls"))) { error[0] = "설문을 찾을 수 없습니다"; return; }
-            if (!s.optBoolean("open", true)) { error[0] = "마감된 설문입니다"; return; }
-            JSONArray opts = s.optJSONArray("options");
-            if (opts == null || opt < 0 || opt >= opts.length()) { error[0] = "선택지가 올바르지 않습니다"; return; }
-            Util.put(Util.obj(s, "responses"), String.valueOf(no), opt);
-        });
-        if (error[0] != null) throw err(400, error[0]);
-        return Response.ok();
-    }
-
     // ------------------------------------------------------------------ files
 
-    private Response upload(Request r, boolean student) throws Exception {
+    private Response upload(Request r) throws Exception {
         if (!"PUT".equals(r.method) && !"POST".equals(r.method)) throw err(405, "PUT으로 업로드하세요");
         String fname = r.header("x-filename");
         fname = fname == null ? "file" : Util.safeName(URLDecoder.decode(fname, "UTF-8"));
         if (r.contentLength <= 0) throw err(400, "빈 파일입니다");
         if (r.contentLength > 300L * 1024 * 1024) throw err(413, "파일이 너무 큽니다 (최대 300MB)");
-        JSONObject meta;
-        if (student) {
-            String cls = clsOk(r.param("cls"));
-            int no;
-            try { no = Integer.parseInt(r.param("no")); } catch (Exception e) { throw err(400, "번호를 입력하세요"); }
-            String aid = r.param("assignment");
-            final int fno = no;
-            JSONObject asg = store.read(root -> {
-                JSONObject a = Util.findById(Util.arr(root, "assignments"), aid == null ? "" : aid);
-                if (a == null || !cls.equals(a.optString("cls")) || !a.optBoolean("open", true) || !inRoster(root, cls, fno)) return null;
-                return a;
-            });
-            if (asg == null) throw err(400, "제출할 수 없는 과제이거나 명단에 없는 번호입니다");
-            meta = Util.jo("kind", "submission", "cls", cls, "no", no, "assignment", aid);
-        } else {
-            JSONObject s = requireStaff(r);
-            String kind = r.param("kind") == null ? "material" : r.param("kind");
-            if (!kind.equals("material") && !kind.equals("slide")) throw err(400, "kind는 material 또는 slide");
-            meta = Util.jo("kind", kind, "cls", r.param("cls") == null ? "" : r.param("cls"), "owner", s.optString("name"));
-        }
+        JSONObject s = requireStaff(r);
+        JSONObject meta = Util.jo("kind", "material", "cls", r.param("cls") == null ? "" : r.param("cls"), "owner", s.optString("name"));
         String id = Util.randomId();
         File out = new File(filesDir, id);
         long n;
@@ -1234,7 +1124,6 @@ public class HubApi {
             return f == null ? null : Util.copy(f);
         });
         if (meta == null) throw err(404, "파일이 없습니다");
-        if ("submission".equals(meta.optString("kind"))) requireStaff(r);
         File f = new File(filesDir, Util.safeName(id));
         if (!f.exists()) throw err(404, "파일이 삭제되었습니다");
         Response res = Response.file(f, meta.optString("mime", "application/octet-stream"));

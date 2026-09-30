@@ -201,7 +201,8 @@ public class Router implements HttpServer.Handler {
                         "days", classes == null || cls == null ? null : classes.optJSONArray(cls)));
             }
             Util.put(out, "timetable", Util.jo("source", "comcigan", "fetchedAt", full.optLong("fetchedAt"), "updated", full.optString("updated"),
-                    "schoolName", full.optString("schoolName"), "times", full.optJSONArray("times"), "classCounts", full.optJSONObject("classCounts"), "weeks", weeks));
+                    "schoolName", full.optString("schoolName"), "times", full.optJSONArray("times"), "classCounts", full.optJSONObject("classCounts"), "weeks", weeks,
+                    "homeroom", full.optJSONObject("homerooms") == null || cls == null ? "" : full.optJSONObject("homerooms").optString(cls)));
         } else if (d.optJSONObject("neisTimetable") != null) {
             JSONObject n = d.optJSONObject("neisTimetable");
             Util.put(out, "timetable", Util.jo("source", "neis", "fetchedAt", n.optLong("fetchedAt"), "times", new JSONArray(),

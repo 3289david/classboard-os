@@ -1,4 +1,4 @@
-/* Mobile portal: students (QR pages), class officers, teachers, broadcasting club and administrators. */
+/* Mobile portal: administrators and students (QR pages, class officer board). */
 (function () {
   'use strict';
   const C = window.CB;
@@ -49,7 +49,7 @@
     return '<div class="grid2"><label>학년<input id="' + id + '-g" type="number" min="1" max="6" value="' + esc((value || '').split('-')[0] || '') + '"></label><label>반<input id="' + id + '-c" type="number" min="1" max="30" value="' + esc((value || '').split('-')[1] || '') + '"></label></div>';
   }
   function clsVal(id) { const g = val(id + '-g'), c = val(id + '-c'); return g && c ? g + '-' + c : ''; }
-  function myDefaultCls() { return (me && me.classes && me.classes[0]) || localStorage.getItem('cb_last_cls') || ''; }
+  function myDefaultCls() { return (me && me.classes && me.classes[0]) || localStorage.getItem('cb_last_cls') || Object.keys((state && state.classes) || {})[0] || ''; }
   function rememberCls(c) { try { localStorage.setItem('cb_last_cls', c); } catch (e) { /* ignore */ } }
 
   // class counts from comcigan (for class pickers)
@@ -72,12 +72,8 @@
         case '/att': return pageAttend(p.get('c'), p.get('t'));
         case '/read': return pageRead(p.get('n'), p.get('c'));
         case '/notices': return pageNotices(p.get('c'));
-        case '/survey': return pageSurvey(p.get('s'), p.get('c'));
-        case '/submit': return pageSubmit(p.get('a'), p.get('c'));
-        case '/materials': return pageMaterials(p.get('c'));
         case '/officer': return pageOfficer(p.get('c'));
         case '/staff': return pageStaff();
-        case '/broadcast': return pageBroadcast();
         default: return pageHome();
       }
     } catch (e) {
@@ -90,11 +86,9 @@
     title((state && state.config && (state.config.displayName || (state.config.school && state.config.school.name))) || '교실 OS');
     const c = localStorage.getItem('cb_last_cls') || '';
     root.innerHTML = '<div class="big-choice">' +
-      '<button data-go="#/staff">' + ic('teacher') + '<div><b>교사 · 관리자</b><span>공지, 오늘의 수업, 출석, 학급 관리, 긴급 알림</span></div></button>' +
-      '<button data-go="#/officer' + (c ? '?c=' + c : '') + '">' + ic('bell') + '<div><b>학급 임원 알림판</b><span>회장 · 부회장 전용 버튼</span></div></button>' +
-      '<button data-go="#/broadcast">' + ic('radio') + '<div><b>방송부</b><span>방송 시작 알림과 실시간 자막</span></div></button>' +
-      '<button data-go="#/notices' + (c ? '?c=' + c : '') + '">' + ic('megaphone') + '<div><b>학생: 공지 확인</b><span>우리 반 공지 읽고 확인</span></div></button>' +
-      '<button data-go="#/materials' + (c ? '?c=' + c : '') + '">' + ic('download') + '<div><b>학생: 수업 자료</b><span>선생님이 올린 자료 받기</span></div></button></div>';
+      '<button data-go="#/staff">' + ic('lock') + '<div><b>관리자</b><span>공지, 오늘의 수업, 출석, 학급, 긴급 알림, 학교 설정</span></div></button>' +
+      '<button data-go="#/notices' + (c ? '?c=' + c : '') + '">' + ic('user') + '<div><b>학생</b><span>우리 반 공지 확인</span></div></button>' +
+      '<button data-go="#/officer' + (c ? '?c=' + c : '') + '">' + ic('bell') + '<div><b>학급 임원</b><span>회장 · 부회장 알림 버튼</span></div></button></div>';
     C.$$('[data-go]').forEach((b) => { b.onclick = () => { location.hash = b.dataset.go; }; });
   }
 
@@ -145,34 +139,6 @@
     };
   }
 
-  function pageSurvey(sid, cls) {
-    const s = ((state && state.surveys) || []).find((x) => x.id === sid);
-    title('설문');
-    if (!s) { root.innerHTML = card(ic('info') + '설문', '<div class="empty">설문을 찾을 수 없습니다</div>'); return; }
-    let no = 0, opt = -1;
-    root.innerHTML = card(ic('list') + esc(s.question), (s.open === false ? '<div class="empty">마감된 설문입니다</div>' : '') + '<div class="big-choice" id="sv-opts">' + s.options.map((o, i) => '<button data-o="' + i + '"><div><b>' + esc(o) + '</b></div></button>').join('') + '</div>') +
-      card(ic('user') + '내 번호', numberPicker(cls, (x) => { no = x; upd(); })) + '<button class="btn pri block" id="sv-go" disabled>제출</button>';
-    function upd() { $('#sv-go').disabled = !(no && opt >= 0) || s.open === false; }
-    C.$$('#sv-opts button').forEach((b) => { b.onclick = () => { opt = Number(b.dataset.o); C.$$('#sv-opts button').forEach((x) => { x.style.outline = x === b ? '3px solid var(--accent)' : ''; }); upd(); }; });
-    $('#sv-go').onclick = async () => { try { await post('/api/student/vote', { surveyId: sid, cls, no, option: opt }); toast('응답을 제출했습니다'); $('#sv-go').disabled = true; } catch (e) { toast(e.message); } };
-  }
-
-  function pageSubmit(aid, cls) {
-    const a = ((state && state.assignments) || []).find((x) => x.id === aid);
-    title('과제 제출');
-    if (!a) { root.innerHTML = card(ic('info') + '과제', '<div class="empty">과제를 찾을 수 없습니다</div>'); return; }
-    let no = 0;
-    root.innerHTML = card(ic('clipboard') + esc(a.title), '<div class="muted" style="white-space:pre-wrap">' + esc(a.note || '') + '</div>' + (a.due ? '<div class="dim">마감 ' + C.dateLabel(a.due) + '</div>' : '')) +
-      card(ic('user') + '내 번호', numberPicker(cls, (x) => { no = x; upd(); })) +
-      card(ic('upload') + '파일', '<input type="file" id="sb-file"><div class="bar-g" style="margin-top:.7rem"><i id="sb-prog" style="width:0"></i></div>') + '<button class="btn pri block" id="sb-go" disabled>제출하기</button>';
-    const upd = () => { $('#sb-go').disabled = !(no && $('#sb-file').files.length); };
-    $('#sb-file').onchange = upd;
-    $('#sb-go').onclick = () => {
-      const f = $('#sb-file').files[0];
-      uploadWithProgress('/api/student/submit?assignment=' + encodeURIComponent(aid) + '&cls=' + cls + '&no=' + no, f, $('#sb-prog'), () => { toast('제출했습니다'); $('#sb-go').disabled = true; });
-    };
-  }
-
   function uploadWithProgress(url, file, bar, done) {
     const x = new XMLHttpRequest();
     x.open('PUT', url);
@@ -188,12 +154,6 @@
     };
     x.onerror = () => toast('네트워크 오류로 업로드하지 못했습니다');
     x.send(file);
-  }
-
-  function pageMaterials(cls) {
-    title('수업 자료 · ' + classLabel(cls));
-    const files = ((state && state.files) || []).filter((f) => f.kind === 'material' && (!f.cls || f.cls === cls));
-    root.innerHTML = card(ic('folder') + '수업 자료', files.length ? files.slice().reverse().map((f) => '<div class="item">' + ic('file') + '<div class="grow"><b>' + esc(f.name) + '</b><span class="sub">' + C.bytes(f.size) + ' · ' + esc(f.owner || '') + ' · ' + C.dateTime(f.at) + '</span></div><a class="btn sm pri" href="/api/files/' + f.id + '">' + ic('download') + '받기</a></div>').join('') : '<div class="empty">올라온 자료가 없습니다</div>');
   }
 
   // ---------------------------------------------------------------- login
@@ -259,39 +219,21 @@
     draw();
   }
 
-  // ---------------------------------------------------------------- broadcast
-  async function pageBroadcast() {
-    title('방송부');
-    if (!(await ensureMe(['broadcast', 'admin', 'teacher']))) return;
-    await loadState();
-    const b = (state && state.broadcast) || {};
-    root.innerHTML = card(ic('radio') + '방송 제어', '<div class="form"><label>방송 제목<input id="bc-title" value="' + esc(b.title || '') + '" placeholder="예: 아침 방송, 체육대회 중계"></label>' +
-      '<label>실시간 자막 (전자칠판 하단에 표시)<textarea id="bc-cap">' + esc(b.caption || '') + '</textarea></label>' +
-      '<div class="row"><button class="btn ' + (b.live ? 'red' : 'pri') + '" id="bc-live">' + ic(b.live ? 'stop' : 'play') + (b.live ? '방송 종료' : '방송 시작 알림') + '</button><button class="btn" id="bc-send">' + ic('send') + '자막 보내기</button></div>' +
-      '<label>점심 방송 안내 (쉬는 시간 화면에 표시)<textarea id="bc-lunch">' + esc(b.lunch || '') + '</textarea></label><button class="btn" id="bc-lunch-save">' + ic('check') + '점심 방송 안내 저장</button></div>', logoutBtn());
-    bindLogout();
-    $('#bc-live').onclick = async () => { try { await post('/api/broadcast', { live: !b.live, title: val('bc-title'), caption: val('bc-cap') }); toast(b.live ? '방송을 종료했습니다' : '모든 전자칠판에 방송 시작을 알렸습니다'); await loadState(); pageBroadcast(); } catch (e) { toast(e.message); } };
-    $('#bc-send').onclick = async () => { try { await post('/api/broadcast', { title: val('bc-title'), caption: val('bc-cap') }); toast('자막을 보냈습니다'); } catch (e) { toast(e.message); } };
-    $('#bc-lunch-save').onclick = async () => { try { await post('/api/broadcast', { lunch: val('bc-lunch') }); toast('저장했습니다'); } catch (e) { toast(e.message); } };
-  }
-
   // ---------------------------------------------------------------- staff
   const TABS = [
-    ['lesson', '오늘의 수업', 'book'], ['notice', '공지', 'megaphone'], ['hw', '준비물·과제', 'backpack'], ['att', '출석', 'users'],
-    ['class', '학급 관리', 'school'], ['calls', '호출', 'bell'], ['tt', '시간표', 'clock'], ['sched', '일정·시험', 'calendar'],
-    ['survey', '설문·과제제출', 'list'], ['files', '자료·사진', 'folder'], ['bcast', '방송', 'radio'],
-    ['emergency', '긴급 알림', 'alert', 'admin'], ['school', '학교 설정', 'settings', 'admin'], ['users', '계정', 'lock', 'admin'],
-    ['directory', '연락처·특별실', 'phone', 'admin'], ['devices', '기기', 'monitor', 'admin'],
+    ['lesson', '수업', 'book'], ['notice', '공지', 'megaphone'], ['plan', '과제 · 일정', 'calendar'],
+    ['class', '학급', 'users'], ['emergency', '긴급', 'alert'], ['settings', '설정', 'settings'],
   ];
+  let curCls = '';
 
   async function pageStaff() {
-    title('교사 포털');
+    title('관리자');
     if (!(await ensureMe(['teacher', 'admin']))) return;
-    $('#who').textContent = me.name + (me.role === 'admin' ? ' (관리자)' : ' 선생님');
+    $('#who').textContent = me.name;
     await loadState();
     await loadClassCounts();
     startCallWatch();
-    const tabs = TABS.filter((t) => !t[3] || me.role === 'admin');
+    const tabs = TABS;
     if (!tab || !tabs.find((t) => t[0] === tab)) tab = params().get('tab') || 'lesson';
     root.innerHTML = '<div class="tabs">' + tabs.map((t) => '<button data-tab="' + t[0] + '" class="' + (t[0] === tab ? 'on' : '') + '">' + ic(t[2]) + t[1] + '</button>').join('') + '</div><div id="tab"></div><div class="row" style="justify-content:flex-end">' + logoutBtn() + '<button class="btn sm" id="chg-pin">' + ic('lock') + 'PIN 변경</button></div>';
     bindLogout();
@@ -310,12 +252,18 @@
     const el = $('#tab');
     el.innerHTML = '<div class="empty">불러오는 중...</div>';
     await loadState();
-    const fn = {
-      lesson: tabLesson, notice: tabNotice, hw: tabHomework, att: tabAttendance, class: tabClass, calls: tabCalls, tt: tabTimetable, sched: tabSchedule,
-      survey: tabSurvey, files: tabFiles, bcast: () => { location.hash = '#/broadcast'; }, emergency: tabEmergency, school: tabSchool, users: tabUsers, directory: tabDirectory, devices: tabDevices,
-    }[tab];
+    const fn = { lesson: tabLesson, notice: tabNotice, plan: tabPlan, class: tabClassAll, emergency: tabEmergency, settings: tabSettings }[tab];
     try { await fn(el); } catch (e) { el.innerHTML = card(ic('alert') + '오류', esc(e.message)); }
   }
+
+  // composite tabs: several small sections on one page
+  async function sections(el, fns) {
+    el.innerHTML = fns.map((_, i) => '<div id="sec' + i + '"></div>').join('');
+    for (let i = 0; i < fns.length; i++) await fns[i](document.getElementById('sec' + i));
+  }
+  const tabPlan = (el) => sections(el, [tabHomework, tabOverrides, tabSchedule]);
+  const tabClassAll = (el) => sections(el, [tabAttendance, tabClass]);
+  const tabSettings = (el) => sections(el, [tabSchool, tabUsers, tabDirectory, tabDevices]);
 
   // generic collection helpers
   async function saveItem(coll, item) { return post('/api/c/' + coll, item); }
@@ -339,8 +287,8 @@
       '<label>수업 자료 (올린 파일 중 선택)<select id="ls-files" multiple size="' + Math.min(6, Math.max(2, materials.length)) + '">' + materials.map((f) => '<option value="' + f.id + '">' + esc(f.name) + '</option>').join('') + '</select></label>' +
       '<label>새 자료 올리기 (PDF, PPT, 한글, 이미지 등)<input type="file" id="ls-up" multiple></label><div class="bar-g"><i id="ls-prog" style="width:0"></i></div>' +
       '<label>링크 (한 줄에 하나: 제목 | 주소)<textarea id="ls-links" placeholder="수업 영상 | https://..."></textarea></label>' +
-      '<div class="grid2"><label>수업 타이머 (분, 선택)<input id="ls-timer" type="number" min="0" max="120"></label><label>자동 실행 앱 패키지 (선택)<input id="ls-app" placeholder="예: com.microsoft.office.powerpoint"></label></div>' +
-      '<label>안내 문구<textarea id="ls-note"></textarea></label>' +
+      '<label>수업 타이머 (분, 선택)<input id="ls-timer" type="number" min="0" max="120"></label>' +
+      '<label>안내 문구<input id="ls-note"></label>' +
       '<div class="row"><button class="btn pri" id="ls-save">' + ic('check') + '저장 (해당 교시에 자동 표시)</button><button class="btn" id="ls-now">' + ic('monitor') + '저장하고 지금 칠판에 띄우기</button></div></div>') +
       card(ic('list') + '등록된 수업 화면', mine.length ? mine.map((l) => '<div class="item"><div class="grow"><b>' + esc(classLabel(l.cls)) + ' · ' + C.shortDate(l.date) + ' ' + l.period + '교시 ' + esc(l.subject || '') + '</b><span class="sub">' + esc(l.goal || '') + '</span>' +
         (nowMap[l.cls] && nowMap[l.cls].id === l.id ? '<span class="chip green">지금 표시 중</span>' : '') + '</div><button class="btn sm" data-show="' + l.id + '|' + l.cls + '">' + ic('monitor') + '띄우기</button><button class="btn sm" data-del="' + l.id + '">' + ic('trash') + '</button></div>').join('') : '<div class="empty">없음</div>');
@@ -365,7 +313,7 @@
       if (!cls2) throw new Error('학급을 선택하세요');
       const links = val('ls-links').split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const p = l.split('|'); return p.length > 1 ? { title: p[0].trim(), url: p.slice(1).join('|').trim() } : { title: '', url: l }; });
       return { cls: cls2, date: val('ls-date'), period: Number(val('ls-p')), subject: val('ls-subj'), goal: val('ls-goal'), supplies: val('ls-sup'),
-        files: Array.from($('#ls-files').selectedOptions).map((o) => o.value), links, timerMin: Number(val('ls-timer')) || 0, app: val('ls-app'), note: val('ls-note') };
+        files: Array.from($('#ls-files').selectedOptions).map((o) => o.value), links, timerMin: Number(val('ls-timer')) || 0, note: val('ls-note') };
     };
     $('#ls-save').onclick = async () => { try { const it = collect(); await saveItem('lessons', it); rememberCls(it.cls); toast('저장했습니다'); drawTab(); } catch (e) { toast(e.message); } };
     $('#ls-now').onclick = async () => {
@@ -420,10 +368,11 @@
 
   // ---- 출석
   async function tabAttendance(el) {
-    const cls = tabAttendance.cls || myDefaultCls();
+    const cls = curCls || myDefaultCls();
     const date = tabAttendance.date || C.today();
     el.innerHTML = card(ic('users') + '출석부', '<div class="grid2"><label class="form">학급<select id="at-cls">' + clsOptions(cls, true) + '</select></label><label class="form">날짜<input id="at-date" type="date" value="' + date + '"></label></div><div id="at-list" style="margin-top:.8rem"></div>');
-    $('#at-cls').onchange = () => { tabAttendance.cls = val('at-cls'); drawTab(); };
+    $('#at-cls').onchange = () => { curCls = val('at-cls'); drawTab(); };
+    curCls = cls;
     $('#at-date').onchange = () => { tabAttendance.date = val('at-date'); drawTab(); };
     if (!cls) { $('#at-list').innerHTML = '<div class="empty">학급을 선택하세요</div>'; return; }
     const pv = await get('/api/class/' + cls + '/private');
@@ -449,13 +398,11 @@
 
   // ---- 학급 관리
   async function tabClass(el) {
-    const cls = tabClass.cls || myDefaultCls();
-    el.innerHTML = card(ic('school') + '학급 선택', '<select id="cl-cls">' + clsOptions(cls, true) + '</select>') + '<div id="cl-body"></div>';
-    $('#cl-cls').onchange = () => { tabClass.cls = val('cl-cls'); drawTab(); };
+    const cls = curCls || myDefaultCls();
+    el.innerHTML = '<div id="cl-body"></div>';
     if (!cls) return;
     const pv = await get('/api/class/' + cls + '/private');
     const os = pv.officerSettings;
-    const W = os.windows || [];
     const body = $('#cl-body');
     body.innerHTML =
       card(ic('users') + '학생 명단', '<p class="dim">한 줄에 한 명씩 "번호 이름" 형식으로 입력하세요. 이름은 선택입니다.</p><textarea id="cl-roster" style="min-height:10rem">' + esc(pv.roster.map((s) => s.no + ' ' + (s.name || '')).join('\n')) + '</textarea><button class="btn pri" id="cl-roster-save" style="margin-top:.6rem">' + ic('check') + '명단 저장</button>') +
@@ -466,9 +413,7 @@
         (o.blockedUntil > Date.now() ? '<p class="dim">' + esc(o.name) + ': ' + new Date(o.blockedUntil).toLocaleTimeString('ko-KR') + '까지 제한 중</p>' : '')).join('') + '</div>' +
         '<button class="btn sm" id="cl-off-add">' + ic('plus') + '임원 추가</button> <button class="btn pri" id="cl-off-save">' + ic('check') + '임원 저장</button><p class="dim" style="margin-top:.5rem">이름을 비우고 저장하면 삭제됩니다.</p>') +
       card(ic('sliders') + '임원 버튼 설정', '<div class="form"><label class="chk"><input type="checkbox" id="os-en"' + (os.enabled ? ' checked' : '') + '>임원 버튼 사용</label><label class="chk"><input type="checkbox" id="os-snd"' + (os.sound ? ' checked' : '') + '>알림음 재생</label>' +
-        '<div>' + C.OFFICER_TYPES.map((t) => '<label class="chk"><input type="checkbox" class="os-type" value="' + t.type + '"' + ((os.types || []).indexOf(t.type) >= 0 ? ' checked' : '') + '>' + t.label + '</label>').join('') + '</div>' +
         '<div class="grid3"><label>표시 시간(초)<input id="os-dur" type="number" min="3" max="30" value="' + os.durationSec + '"></label><label>쿨다운(초)<input id="os-cool" type="number" min="5" max="600" value="' + os.cooldownSec + '"></label><label>10분 최대 횟수<input id="os-max" type="number" min="1" max="50" value="' + os.maxPer10min + '"></label></div>' +
-        '<label>사용 가능 시간 (비우면 항상, 한 줄에 "08:00-08:40")<textarea id="os-win" style="min-height:4rem">' + esc(W.map((w) => w.from + '-' + w.to).join('\n')) + '</textarea></label>' +
         '<div class="row"><button class="btn pri" id="os-save">' + ic('check') + '설정 저장</button><button class="btn" id="os-unblock">제한 해제</button></div></div>') +
       card(ic('eye') + '임원 버튼 기록 (교사만 확인)', pv.officerLog.length ? pv.officerLog.slice(0, 40).map((a) => '<div class="item"><div class="grow"><b>' + esc(C.officerType(a.type).label) + '</b><span class="sub">' + esc(a.name) + ' (' + esc(a.title || '') + ') · ' + C.dateTime(a.at) + '</span></div></div>').join('') : '<div class="empty">기록 없음</div>');
     $('#cl-roster-save').onclick = async () => {
@@ -486,9 +431,8 @@
       try { await post('/api/class/' + cls + '/officers', { officers }); toast('임원을 저장했습니다'); drawTab(); } catch (e) { toast(e.message); }
     };
     $('#os-save').onclick = async () => {
-      const windows = val('os-win').split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const p = l.split('-'); return { from: (p[0] || '').trim(), to: (p[1] || '').trim() }; }).filter((w) => C.parseHm(w.from) >= 0 && C.parseHm(w.to) >= 0);
       try {
-        await post('/api/class/' + cls + '/officer-settings', { enabled: val('os-en'), sound: val('os-snd'), durationSec: Number(val('os-dur')), cooldownSec: Number(val('os-cool')), maxPer10min: Number(val('os-max')), windows, types: C.$$('.os-type').filter((x) => x.checked).map((x) => x.value) });
+        await post('/api/class/' + cls + '/officer-settings', { enabled: val('os-en'), sound: val('os-snd'), durationSec: Number(val('os-dur')), cooldownSec: Number(val('os-cool')), maxPer10min: Number(val('os-max')) });
         toast('저장했습니다');
       } catch (e) { toast(e.message); }
     };
@@ -533,51 +477,21 @@
       });
     } catch (e) { /* audio unavailable */ }
   }
-  async function tabCalls(el) {
-    const r = await get('/api/teacher/calls');
-    el.innerHTML = card(ic('bell') + '학급 호출 (최근 3시간)', '<p class="dim">담당 학급이 지정된 계정은 해당 학급의 호출만 받습니다. 이 페이지를 열어 두면 호출 시 소리와 진동으로 알립니다.</p>' +
-      (r.calls.length ? r.calls.map((c) => '<div class="item"><div class="grow"><b>' + esc(classLabel(c.cls)) + '</b><span class="sub">' + C.dateTime(c.at) + ' · ' + (c.acked ? esc(c.ackedBy) + ' 확인' : '미확인') + '</span></div>' + (c.acked ? '' : '<button class="btn sm pri" data-ack="' + c.id + '">확인</button>') + '</div>').join('') : '<div class="empty">호출이 없습니다</div>'));
-    C.$$('[data-ack]', el).forEach((b) => { b.onclick = async () => { await post('/api/teacher/calls/ack', { id: b.dataset.ack }); drawTab(); }; });
-  }
 
-  // ---- 시간표 (교사용 + 보강/대체)
-  async function tabTimetable(el) {
-    let teachers = [];
-    try { teachers = (await C.get('/api/local/comci/teachers', { token: '' })).teachers; } catch (e) { teachers = []; }
-    let html = '';
-    if (!teachers.length) html += card(ic('clock') + '내 시간표', '<div class="empty">컴시간 데이터가 없습니다. 관리자가 학교 설정에서 컴시간 학교를 연결하면 표시됩니다.</div>');
-    else {
-      html += card(ic('clock') + '내 시간표', '<label class="form">컴시간 교사 이름 선택<select id="tt-th"><option value="0">선택</option>' + teachers.map((t) => '<option value="' + t.th + '"' + (me.comciTeacher === t.th ? ' selected' : '') + '>' + esc(t.name) + ' (' + esc(t.subjects) + ')</option>').join('') + '</select></label><div id="tt-grid" style="margin-top:.8rem;overflow-x:auto"></div>');
-    }
+
+  // ---- 보강 · 대체 수업
+  async function tabOverrides(el) {
     const ov = ((state && state.overrides) || []).filter((o) => o.date >= C.today()).sort((a, b) => (a.date + a.period < b.date + b.period ? -1 : 1));
-    html += card(ic('edit') + '보강 · 대체 수업 · 교실 변경', '<div class="form"><label>학급<select id="ov-cls">' + clsOptions(myDefaultCls(), true) + '</select></label>' +
+    el.innerHTML = card(ic('edit') + '보강 · 대체 수업 · 교실 변경', '<div class="form"><label>학급<select id="ov-cls">' + clsOptions(myDefaultCls(), true) + '</select></label>' +
       '<div class="grid2"><label>날짜<input id="ov-date" type="date" value="' + C.today() + '"></label><label>교시<input id="ov-p" type="number" min="1" max="9"></label></div>' +
       '<div class="grid2"><label>종류<select id="ov-kind"><option>보강</option><option>대체</option><option>교실변경</option><option>휴강</option></select></label><label>과목<input id="ov-subj"></label></div>' +
-      '<div class="grid2"><label>선생님<input id="ov-t"></label><label>교실<input id="ov-room"></label></div><label>메모<input id="ov-note"></label>' +
-      '<button class="btn pri" id="ov-save">' + ic('check') + '적용 (전자칠판에 즉시 반영)</button></div>') +
-      card(ic('list') + '예정된 변경', ov.length ? ov.map((o) => '<div class="item"><div class="grow"><b>' + esc(classLabel(o.cls)) + ' · ' + C.shortDate(o.date) + ' ' + o.period + '교시 · ' + esc(o.kind) + '</b><span class="sub">' + esc([o.subject, o.teacher, o.room, o.note].filter(Boolean).join(' · ')) + '</span></div><button class="btn sm" data-del="' + o.id + '">' + ic('trash') + '</button></div>').join('') : '<div class="empty">없음</div>');
-    el.innerHTML = html;
+      '<div class="grid2"><label>선생님<input id="ov-t"></label><label>교실<input id="ov-room"></label></div>' +
+      '<button class="btn pri" id="ov-save">' + ic('check') + '적용 (전자칠판에 즉시 반영)</button></div>' +
+      (ov.length ? ov.map((o) => '<div class="item"><div class="grow"><b>' + esc(classLabel(o.cls)) + ' · ' + C.shortDate(o.date) + ' ' + o.period + '교시 · ' + esc(o.kind) + '</b><span class="sub">' + esc([o.subject, o.teacher, o.room].filter(Boolean).join(' · ')) + '</span></div><button class="btn sm" data-del="' + o.id + '">' + ic('trash') + '</button></div>').join('') : ''));
     bindDeletes(el, 'overrides');
     $('#ov-save').onclick = async () => {
-      try { await saveItem('overrides', { cls: val('ov-cls'), date: val('ov-date'), period: Number(val('ov-p')), kind: val('ov-kind'), subject: val('ov-subj'), teacher: val('ov-t'), room: val('ov-room'), note: val('ov-note') }); toast('적용했습니다'); drawTab(); } catch (e) { toast(e.message); }
+      try { await saveItem('overrides', { cls: val('ov-cls'), date: val('ov-date'), period: Number(val('ov-p')), kind: val('ov-kind'), subject: val('ov-subj'), teacher: val('ov-t'), room: val('ov-room') }); toast('적용했습니다'); drawTab(); } catch (e) { toast(e.message); }
     };
-    const sel = $('#tt-th');
-    if (sel) {
-      const drawGrid = async () => {
-        const th = Number(sel.value);
-        if (!th) { $('#tt-grid').innerHTML = ''; return; }
-        const r = await C.get('/api/local/comci/teacher?th=' + th, { token: '' });
-        const dates = Array.from(new Set(r.items.map((x) => x.date))).sort().filter((d) => d >= C.addDays(C.today(), -C.parseIso(C.today()).getDay() + 1)).slice(0, 5);
-        const maxP = Math.max(0, ...r.items.map((x) => x.p));
-        let t = '<table class="tt"><tr><th></th>' + dates.map((d) => '<th>' + C.shortDate(d) + '</th>').join('') + '</tr>';
-        for (let p = 1; p <= maxP; p++) {
-          t += '<tr><th>' + p + '<br><span class="dim">' + esc(r.times[p - 1] || '') + '</span></th>' + dates.map((d) => { const it = r.items.find((x) => x.date === d && x.p === p); return '<td>' + (it ? '<b>' + esc(it.cls) + '</b>' + esc(it.s) + (it.ch ? ' <span class="chip orange">변경</span>' : '') : '<span class="dim">공강</span>') + '</td>'; }).join('') + '</tr>';
-        }
-        $('#tt-grid').innerHTML = t + '</table>';
-      };
-      sel.onchange = async () => { await post('/api/me/comci', { th: Number(sel.value) }); me.comciTeacher = Number(sel.value); drawGrid(); };
-      drawGrid();
-    }
   }
 
   // ---- 일정 · 시험
@@ -598,45 +512,6 @@
     $('#ex-save').onclick = async () => { try { await saveItem('exams', { name: val('ex-name'), grade: Number(val('ex-g')) || 0, date: val('ex-date'), period: Number(val('ex-p')) || 0, subject: val('ex-subj'), range: val('ex-range'), supplies: val('ex-sup') }); toast('추가했습니다'); drawTab(); } catch (e) { toast(e.message); } };
     $('#ev-save').onclick = async () => {
       try { await saveItem('events', { title: val('ev-title'), date: val('ev-date'), endDate: val('ev-end'), kind: val('ev-kind'), grades: val('ev-grades').split(',').map((x) => Number(x.trim())).filter(Boolean) }); toast('추가했습니다'); drawTab(); } catch (e) { toast(e.message); }
-    };
-  }
-
-  // ---- 설문 · 과제 제출
-  async function tabSurvey(el) {
-    const cls = tabSurvey.cls || myDefaultCls();
-    const sv = ((state && state.surveys) || []).filter((s) => !cls || s.cls === cls);
-    const as = ((state && state.assignments) || []).filter((a) => !cls || a.cls === cls);
-    let subs = [];
-    if (cls) { try { subs = (await get('/api/class/' + cls + '/private')).submissions; } catch (e) { subs = []; } }
-    el.innerHTML = card(ic('school') + '학급', '<select id="sv-cls">' + clsOptions(cls, true) + '</select>') +
-      card(ic('list') + '설문 만들기 (QR로 응답)', '<div class="form"><label>질문<input id="sv-q"></label><label>선택지 (한 줄에 하나)<textarea id="sv-o"></textarea></label><button class="btn pri" id="sv-save">' + ic('plus') + '만들기</button></div>' +
-        (sv.length ? sv.map((s) => { const total = s.responseCount || 0; return '<div class="item"><div class="grow"><b>' + esc(s.question) + '</b><span class="sub">' + s.options.map((o, i) => esc(o) + ': ' + (s.tally[i] || 0)).join(' · ') + ' (응답 ' + total + ')</span></div><button class="btn sm" data-close-s="' + s.id + '">' + (s.open === false ? '다시 열기' : '마감') + '</button><button class="btn sm" data-del="' + s.id + '">' + ic('trash') + '</button></div>'; }).join('') : '')) +
-      card(ic('upload') + '과제 제출함 (QR로 파일 제출)', '<div class="form"><label>과제 제목<input id="as-t"></label><label>안내<textarea id="as-n" style="min-height:4rem"></textarea></label><label>마감일<input id="as-d" type="date"></label><button class="btn pri" id="as-save">' + ic('plus') + '만들기</button></div>' +
-        (as.length ? as.map((a) => { const list = subs.filter((f) => f.assignment === a.id); return '<div class="item"><div class="grow"><b>' + esc(a.title) + '</b><span class="sub">제출 ' + list.length + '건' + (a.due ? ' · 마감 ' + C.shortDate(a.due) : '') + '</span>' +
-          list.map((f) => '<div><a href="/api/files/' + f.id + '?token=' + encodeURIComponent(getTok()) + '">' + f.no + '번 · ' + esc(f.name) + ' (' + C.bytes(f.size) + ')</a></div>').join('') + '</div><button class="btn sm" data-close-a="' + a.id + '">' + (a.open === false ? '다시 열기' : '마감') + '</button></div>'; }).join('') : ''));
-    $('#sv-cls').onchange = () => { tabSurvey.cls = val('sv-cls'); drawTab(); };
-    bindDeletes(el, 'surveys');
-    $('#sv-save').onclick = async () => { try { await saveItem('surveys', { cls: val('sv-cls'), question: val('sv-q'), options: val('sv-o').split('\n').map((x) => x.trim()).filter(Boolean), open: true }); toast('만들었습니다. 전자칠판 QR 메뉴에 표시됩니다'); drawTab(); } catch (e) { toast(e.message); } };
-    $('#as-save').onclick = async () => { try { await saveItem('assignments', { cls: val('sv-cls'), title: val('as-t'), note: val('as-n'), due: val('as-d'), open: true }); toast('만들었습니다'); drawTab(); } catch (e) { toast(e.message); } };
-    C.$$('[data-close-s]', el).forEach((b) => { b.onclick = async () => { const s = state.surveys.find((x) => x.id === b.dataset.closeS); await saveItem('surveys', { id: s.id, cls: s.cls, question: s.question, options: s.options, open: s.open === false }); drawTab(); }; });
-    C.$$('[data-close-a]', el).forEach((b) => { b.onclick = async () => { const a = state.assignments.find((x) => x.id === b.dataset.closeA); await saveItem('assignments', { id: a.id, cls: a.cls, title: a.title, open: a.open === false }); drawTab(); }; });
-  }
-
-  // ---- 자료 · 사진
-  async function tabFiles(el) {
-    const files = ((state && state.files) || []).slice().reverse();
-    el.innerHTML = card(ic('upload') + '파일 올리기', '<div class="form"><div class="grid2"><label>종류<select id="fl-kind"><option value="material">수업 자료</option><option value="slide">쉬는 시간 행사 사진</option></select></label><label>학급 (비우면 전체)<select id="fl-cls">' + clsOptions('', true) + '</select></label></div>' +
-      '<input type="file" id="fl-file" multiple><div class="bar-g"><i id="fl-prog" style="width:0"></i></div></div>') +
-      card(ic('folder') + '올린 파일', files.length ? files.map((f) => '<div class="item">' + ic(f.kind === 'slide' ? 'image' : 'file') + '<div class="grow"><b>' + esc(f.name) + '</b><span class="sub">' + (f.kind === 'slide' ? '행사 사진' : '수업 자료') + ' · ' + (f.cls ? classLabel(f.cls) : '전체') + ' · ' + C.bytes(f.size) + ' · ' + esc(f.owner || '') + '</span></div><a class="btn sm" href="/api/files/' + f.id + '">' + ic('download') + '</a><button class="btn sm" data-del="' + f.id + '">' + ic('trash') + '</button></div>').join('') : '<div class="empty">없음</div>');
-    bindDeletes(el, 'files');
-    $('#fl-file').onchange = () => {
-      const list = Array.from($('#fl-file').files);
-      let i = 0;
-      const next = () => {
-        if (i >= list.length) { toast(list.length + '개 올렸습니다'); drawTab(); return; }
-        uploadWithProgress('/api/files?kind=' + val('fl-kind') + '&cls=' + encodeURIComponent(val('fl-cls')), list[i++], $('#fl-prog'), next);
-      };
-      next();
     };
   }
 
@@ -725,18 +600,18 @@
   // ---- 계정 (관리자)
   async function tabUsers(el) {
     const r = await get('/api/admin/users');
-    const roleName = { admin: '관리자', teacher: '교사', broadcast: '방송부' };
-    el.innerHTML = card(ic('user') + '계정 만들기 / 수정', '<div class="form"><input type="hidden" id="u-id"><div class="grid2"><label>이름<input id="u-name"></label><label>역할<select id="u-role"><option value="teacher">교사</option><option value="admin">관리자</option><option value="broadcast">방송부</option></select></label></div>' +
-      '<label>담당 학급 (쉼표, 예: 3-2, 3-4) - 호출 알림 대상<input id="u-cls"></label><label>PIN (새 계정 필수, 수정 시 바꿀 때만)<input id="u-pin" type="password" inputmode="numeric"></label>' +
+    const roleName = { admin: '관리자', teacher: '관리자' };
+    el.innerHTML = card(ic('user') + '관리자 계정', '<div class="form"><input type="hidden" id="u-id"><div class="grid2"><label>이름<input id="u-name"></label><label>담당 학급 (쉼표, 예: 3-2)<input id="u-cls"></label></div>' +
+      '<label>PIN (새 계정 필수, 수정 시 바꿀 때만)<input id="u-pin" type="password" inputmode="numeric"></label>' +
       '<div class="row"><button class="btn pri" id="u-save">' + ic('check') + '저장</button><button class="btn" id="u-new">새로 입력</button></div></div>') +
       card(ic('users') + '계정 목록', r.users.map((u) => '<div class="item"><div class="grow"><b>' + esc(u.name) + '</b><span class="sub">' + roleName[u.role] + (u.classes.length ? ' · ' + u.classes.join(', ') : '') + '</span></div><button class="btn sm" data-edit="' + u.id + '">' + ic('edit') + '</button>' + (u.id !== me.id ? '<button class="btn sm" data-udel="' + u.id + '">' + ic('trash') + '</button>' : '') + '</div>').join(''));
-    const fill = (u) => { $('#u-id').value = u ? u.id : ''; $('#u-name').value = u ? u.name : ''; $('#u-role').value = u ? u.role : 'teacher'; $('#u-cls').value = u ? u.classes.join(', ') : ''; $('#u-pin').value = ''; };
+    const fill = (u) => { $('#u-id').value = u ? u.id : ''; $('#u-name').value = u ? u.name : ''; $('#u-cls').value = u ? u.classes.join(', ') : ''; $('#u-pin').value = ''; };
     $('#u-new').onclick = () => fill(null);
     C.$$('[data-edit]', el).forEach((b) => { b.onclick = () => { fill(r.users.find((u) => u.id === b.dataset.edit)); window.scrollTo(0, 0); }; });
     C.$$('[data-udel]', el).forEach((b) => { b.onclick = async () => { if (!confirm('계정을 삭제할까요?')) return; try { await del('/api/admin/users/' + b.dataset.udel); drawTab(); } catch (e) { toast(e.message); } }; });
     $('#u-save').onclick = async () => {
       const classes = val('u-cls').split(',').map((x) => x.trim()).filter((x) => /^\d+-\d+$/.test(x));
-      try { await post('/api/admin/users', { id: val('u-id'), name: val('u-name'), role: val('u-role'), classes, pin: $('#u-pin').value }); toast('저장했습니다'); drawTab(); } catch (e) { toast(e.message); }
+      try { await post('/api/admin/users', { id: val('u-id'), name: val('u-name'), role: 'admin', classes, pin: $('#u-pin').value }); toast('저장했습니다'); drawTab(); } catch (e) { toast(e.message); }
     };
   }
 
