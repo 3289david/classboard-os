@@ -87,6 +87,10 @@
     browser: () => colored('browser', '#45BFFF', '#1570E6',
       '<circle cx="32" cy="32" r="17" fill="#fff"/>' +
       '<g stroke="#2A86EE" stroke-width="2" fill="none"><ellipse cx="32" cy="32" rx="7" ry="17"/><path d="M15 32h34M18 23h28M18 41h28"/></g>'),
+    hdmi: () => colored('hdmi', '#4B5466', '#262B35',
+      '<rect x="10" y="17" width="44" height="30" rx="4" fill="#3B4250"/><rect x="12" y="19" width="40" height="26" rx="3" fill="#121418"/>' +
+      '<path d="M18 26h28l-3.5 8.5h-21Z" fill="#fff"/><path d="M22 28.2h20" stroke="#121418" stroke-width="1.6" stroke-dasharray="1.6 1.4"/>' +
+      '<text x="32" y="42.5" text-anchor="middle" font-size="6.6" font-weight="700" fill="#9AA4B5" font-family="inherit" letter-spacing=".6">HDMI</text>'),
     drawer: () => colored('drawer', '#7C8594', '#4C5462',
       [0, 1, 2].map((y) => [0, 1, 2].map((x) => '<circle cx="' + (20 + x * 12) + '" cy="' + (20 + y * 12) + '" r="4" fill="#fff"/>').join('')).join('')),
   };

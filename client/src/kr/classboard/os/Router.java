@@ -137,6 +137,86 @@ public class Router implements HttpServer.Handler {
         return res;
     }
 
+    // ------------------------------------------------------------------ documents
+
+    /** PDF shown on the board itself when the school server cannot render it (Android's built-in renderer). */
+    private Response pdfInfo(Request r) throws Exception {
+        if (!r.isLocal()) throw new ApiException(403, "기기에서만 사용할 수 있습니다");
+        java.io.File pdf;
+        String key;
+        if (r.param("path") != null) {
+            pdf = LocalFiles.checked(r.param("path"));
+            key = Integer.toHexString((pdf.getPath() + pdf.lastModified()).hashCode());
+        } else {
+            String url = r.param("url");
+            if (url == null || !url.startsWith("http")) throw new ApiException(400, "주소가 없습니다");
+            key = Integer.toHexString(url.hashCode());
+            pdf = new java.io.File(new java.io.File(ctx.getCacheDir(), "docs"), key + ".pdf");
+            if (!pdf.isFile()) {
+                pdf.getParentFile().mkdirs();
+                Util.writeFileAtomic(pdf, Util.httpGetBytes(url, 60000));
+            }
+        }
+        pdfFiles.put(key, pdf);
+        try (android.os.ParcelFileDescriptor fd = android.os.ParcelFileDescriptor.open(pdf, android.os.ParcelFileDescriptor.MODE_READ_ONLY);
+             android.graphics.pdf.PdfRenderer pr = new android.graphics.pdf.PdfRenderer(fd)) {
+            return Response.json(Util.jo("status", "ready", "key", key, "pages", Math.min(80, pr.getPageCount()), "total", pr.getPageCount()));
+        } catch (Exception e) {
+            throw new ApiException(415, "PDF를 열 수 없습니다: " + e.getMessage());
+        }
+    }
+
+    private final Map<String, java.io.File> pdfFiles = new ConcurrentHashMap<>();
+
+    private synchronized Response pdfPage(Request r) throws Exception {
+        java.io.File pdf = pdfFiles.get(r.param("key") == null ? "" : r.param("key"));
+        if (pdf == null) throw new ApiException(404, "문서를 다시 열어 주세요");
+        int p = Integer.parseInt(r.param("p"));
+        java.io.File out = new java.io.File(new java.io.File(ctx.getCacheDir(), "docs"), r.param("key") + "-" + p + ".jpg");
+        if (!out.isFile()) {
+            out.getParentFile().mkdirs();
+            try (android.os.ParcelFileDescriptor fd = android.os.ParcelFileDescriptor.open(pdf, android.os.ParcelFileDescriptor.MODE_READ_ONLY);
+                 android.graphics.pdf.PdfRenderer pr = new android.graphics.pdf.PdfRenderer(fd);
+                 android.graphics.pdf.PdfRenderer.Page pg = pr.openPage(p - 1)) {
+                // ~1400 px on the long side: sharp on a board, small enough for 4 GB devices
+                float scale = 1400f / Math.max(pg.getWidth(), pg.getHeight());
+                Bitmap bm = Bitmap.createBitmap(Math.round(pg.getWidth() * scale), Math.round(pg.getHeight() * scale), Bitmap.Config.ARGB_8888);
+                bm.eraseColor(android.graphics.Color.WHITE);
+                pg.render(bm, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+                try (java.io.FileOutputStream o = new java.io.FileOutputStream(out)) {
+                    bm.compress(Bitmap.CompressFormat.JPEG, 82, o);
+                }
+                bm.recycle();
+            }
+        }
+        Response res = Response.bytes(Util.readAll(new java.io.FileInputStream(out)), "image/jpeg");
+        res.headers.put("Cache-Control", "max-age=3600");
+        return res;
+    }
+
+    /** A file from this board's storage or USB, sent to the school server to be turned into pages (HWP, Office). */
+    private Response docUpload(Request r) throws Exception {
+        if (!r.isLocal()) throw new ApiException(403, "기기에서만 사용할 수 있습니다");
+        java.io.File f = LocalFiles.checked(r.param("path"));
+        if (!f.isFile() || f.length() > 30L * 1024 * 1024) throw new ApiException(400, "30MB 이하의 파일만 볼 수 있습니다");
+        java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(sync.base() + "/api/doc/upload").openConnection();
+        c.setRequestMethod("POST");
+        c.setDoOutput(true);
+        c.setConnectTimeout(8000);
+        c.setReadTimeout(60000);
+        c.setFixedLengthStreamingMode(f.length());
+        c.setRequestProperty("Content-Type", "application/octet-stream");
+        c.setRequestProperty("X-Filename", java.net.URLEncoder.encode(f.getName(), "UTF-8"));
+        try (InputStream in = new java.io.FileInputStream(f); java.io.OutputStream o = c.getOutputStream()) {
+            Util.copy(in, o, -1);
+        }
+        int code = c.getResponseCode();
+        InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+        String body = in == null ? "{}" : new String(Util.readAll(in), java.nio.charset.StandardCharsets.UTF_8);
+        if (code >= 400) throw new ApiException(code, new JSONObject(body).optString("error", "학교 서버가 파일을 받지 못했습니다"));
+        return Response.json(body);
+    }
+
     // ------------------------------------------------------------------ static
 
     private Response staticFile(Request r) throws Exception {
@@ -195,6 +275,18 @@ public class Router implements HttpServer.Handler {
                 cfg.update(Util.jo("cls", b.optString("cls"), "name", b.optString("name"), "setUp", true));
                 core.onDeviceConfigChanged(true);
                 return Response.ok();
+            }
+            case "pdf/info":
+                return pdfInfo(r);
+            case "pdf/page":
+                return pdfPage(r);
+            case "docupload":
+                return docUpload(r);
+            case "thumb": {
+                if (!r.isLocal()) throw new ApiException(403, "기기에서만 사용할 수 있습니다");
+                Response res = Response.bytes(LocalFiles.thumb(r.param("path")), "image/jpeg");
+                res.headers.put("Cache-Control", "max-age=3600");
+                return res;
             }
             case "home": {
                 if ("GET".equals(r.method)) return Response.json(cfg.home());

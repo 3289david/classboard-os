@@ -20,7 +20,25 @@ public class FilesProvider extends ContentProvider {
         return new Uri.Builder().scheme("content").authority(AUTHORITY).appendPath(f.getName()).build();
     }
 
+    /** content:// link for a file on shared storage or a USB drive (opened read-only by viewer apps). */
+    public static Uri uriForPath(File f) {
+        String enc = android.util.Base64.encodeToString(f.getAbsolutePath().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                android.util.Base64.URL_SAFE | android.util.Base64.NO_WRAP | android.util.Base64.NO_PADDING);
+        return new Uri.Builder().scheme("content").authority(AUTHORITY).appendPath("p").appendPath(enc).appendPath(f.getName()).build();
+    }
+
     private File fileFor(Uri uri) throws FileNotFoundException {
+        java.util.List<String> seg = uri.getPathSegments();
+        if (seg.size() == 3 && "p".equals(seg.get(0))) {
+            try {
+                String path = new String(android.util.Base64.decode(seg.get(1), android.util.Base64.URL_SAFE), java.nio.charset.StandardCharsets.UTF_8);
+                File f = LocalFiles.checked(path);
+                if (!f.isFile()) throw new FileNotFoundException(path);
+                return f;
+            } catch (java.io.IOException e) {
+                throw new FileNotFoundException(e.getMessage());
+            }
+        }
         String name = uri.getLastPathSegment();
         if (name == null || name.contains("/") || name.contains("..")) throw new FileNotFoundException();
         File f = new File(new File(getContext().getCacheDir(), "open"), name);
@@ -42,7 +60,8 @@ public class FilesProvider extends ContentProvider {
     public Cursor query(Uri uri, String[] projection, String selection, String[] args, String sort) {
         try {
             File f = fileFor(uri);
-            String display = f.getName().contains("_") ? f.getName().substring(f.getName().indexOf('_') + 1) : f.getName();
+            boolean shared = uri.getPathSegments().size() == 3;
+            String display = shared || !f.getName().contains("_") ? f.getName() : f.getName().substring(f.getName().indexOf('_') + 1);
             MatrixCursor c = new MatrixCursor(new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE});
             c.addRow(new Object[]{display, f.length()});
             return c;

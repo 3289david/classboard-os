@@ -26,7 +26,10 @@ public class ServerApi {
     private final Map<String, Object[]> detailCache = new ConcurrentHashMap<>(); // nttId -> {time, json}
     private long lastPersist;
 
-    public ServerApi(Store store, Store devices, DataFetcher fetcher, String statusKey) {
+    private final DocService docs;
+
+    public ServerApi(Store store, Store devices, DataFetcher fetcher, String statusKey, java.io.File dataDir) {
+        this.docs = new DocService(dataDir);
         this.store = store;
         this.devices = devices;
         this.fetcher = fetcher;
@@ -62,6 +65,12 @@ public class ServerApi {
                 return hello(r);
             case "/api/homepage/detail":
                 return homepageDetail(r);
+            case "/api/doc/info":
+                return docInfo(r);
+            case "/api/doc/page":
+                return docPage(r);
+            case "/api/doc/upload":
+                return docUpload(r);
             default:
                 return null;
         }
@@ -177,6 +186,47 @@ public class ServerApi {
 
     private static final long DETAIL_TTL = 6 * 3600_000L;
 
+    // ------------------------------------------------------------------ attachments as page images
+
+    private Response docInfo(Request r) throws Exception {
+        String id = r.param("id");
+        if (id != null) {
+            if (!id.matches("[0-9a-f]{24}")) throw new ApiException(400, "잘못된 문서");
+            return Response.json(docs.status(id, null, null));
+        }
+        String url = r.param("url"), name = r.param("name");
+        if (url == null || !DocService.allowedUrl(url)) throw new ApiException(400, "학교 홈페이지의 첨부파일만 열 수 있습니다");
+        if (name == null || !DocService.supported(name)) throw new ApiException(415, "미리 볼 수 없는 파일 형식입니다");
+        return Response.json(docs.status(DocService.id(url), name, () -> Util.httpGetBytes(url, 60000)));
+    }
+
+    private Response docPage(Request r) throws Exception {
+        String id = r.param("id");
+        int p;
+        try {
+            p = Integer.parseInt(r.param("p"));
+        } catch (Exception e) {
+            throw new ApiException(400, "쪽 번호");
+        }
+        if (id == null || !id.matches("[0-9a-f]{24}")) throw new ApiException(400, "잘못된 문서");
+        java.io.File f = docs.page(id, p);
+        if (f == null) throw new ApiException(404, "없는 쪽입니다");
+        Response res = Response.file(f, "image/jpeg");
+        res.headers.put("Cache-Control", "max-age=86400");
+        return res;
+    }
+
+    /** A board sends a file from its USB drive or storage to be shown as pages (HWP needs the server). */
+    private Response docUpload(Request r) throws Exception {
+        String name = URLDecoder.decode(r.header("x-filename") == null ? "" : r.header("x-filename"), "UTF-8");
+        if (!DocService.supported(name)) throw new ApiException(415, "미리 볼 수 없는 파일 형식입니다");
+        byte[] b = r.body();
+        if (b.length == 0) throw new ApiException(400, "빈 파일입니다");
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-1");
+        String id = Util.hex(md.digest(b)).substring(0, 24);
+        return Response.json(docs.status(id, name, () -> b));
+    }
+
     private void prefetchLoop() {
         try {
             Thread.sleep(20_000);
@@ -200,6 +250,16 @@ public class ServerApi {
                             detailCache.put(p.optString("nttId"), new Object[]{now(), d});
                         } catch (Exception e) {
                             L.w("Api", "prefetch " + p.optString("nttId"), e);
+                        }
+                        // convert the newest posts' attachments too, so they open as pages right away
+                        JSONObject dd = (JSONObject) detailCache.get(p.optString("nttId"))[1];
+                        JSONArray fs = k < 5 ? dd.optJSONArray("files") : null;
+                        for (int x = 0; fs != null && x < fs.length(); x++) {
+                            JSONObject f = fs.optJSONObject(x);
+                            String fu = f.optString("url");
+                            if (DocService.supported(f.optString("name")) && f.optLong("size") < 20L * 1024 * 1024 && DocService.allowedUrl(fu)) {
+                                docs.status(DocService.id(fu), f.optString("name"), () -> Util.httpGetBytes(fu, 60000));
+                            }
                         }
                         Thread.sleep(400); // be gentle with the school homepage
                     }
@@ -297,7 +357,7 @@ public class ServerApi {
                 + "h2{font-size:16px;color:#a9b4c3;margin:0 0 10px}table{width:100%;border-collapse:collapse}td,th{padding:8px 6px;border-bottom:1px solid #2a3340;text-align:left;font-size:14px}"
                 + ".on{color:#3ecf8e}.off{color:#748196}li{margin:4px 0;color:#ff8a80}</style></head><body>"
                 + "<h1>" + esc(school) + " 전자칠판 데이터 서버</h1><p class=s>버전 " + BuildInfo.VERSION + " · 전자칠판 " + online + "대 연결됨 · 30초마다 새로고침</p>"
-                + "<section><h2>데이터</h2><table>" + rows + "</table>" + (errs.length() > 0 ? "<h2 style='margin-top:14px'>최근 오류</h2><ul>" + errs + "</ul>" : "") + "</section>"
+                + "<section><h2>데이터</h2><table>" + rows + "<tr><td>첨부파일 변환 (HWP · 오피스)</td><td>" + esc(OfficeSetup.state) + "</td></tr></table>" + (errs.length() > 0 ? "<h2 style='margin-top:14px'>최근 오류</h2><ul>" + errs + "</ul>" : "") + "</section>"
                 + "<section><h2>전자칠판</h2><table><tr><th>이름</th><th>학급</th><th>버전</th><th>상태</th></tr>" + devs + "</table></section>"
                 + "</body></html>";
         return Response.bytes(ServerMain.utf8(html), "text/html; charset=utf-8");

@@ -85,6 +85,21 @@ public class CoreService extends Service {
         fetcher.setOnChange(() -> MainActivity.notifyWeb("data", "{}"));
         exec.scheduleWithFixedDelay(() -> refreshData(false), 3, 60, TimeUnit.SECONDS);
         exec.scheduleWithFixedDelay(this::tick, 5, 10, TimeUnit.SECONDS);
+        // USB drive plugged in or pulled out: the files app shows it right away
+        android.content.IntentFilter media = new android.content.IntentFilter();
+        media.addAction(Intent.ACTION_MEDIA_MOUNTED);
+        media.addAction(Intent.ACTION_MEDIA_UNMOUNTED);
+        media.addAction(Intent.ACTION_MEDIA_REMOVED);
+        media.addAction(Intent.ACTION_MEDIA_EJECT);
+        media.addDataScheme("file");
+        registerReceiver(new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(android.content.Context c, Intent i) {
+                boolean on = Intent.ACTION_MEDIA_MOUNTED.equals(i.getAction());
+                String path = i.getData() == null ? "" : i.getData().getPath();
+                MainActivity.notifyWeb("storage", Util.jo("mounted", on, "path", path == null ? "" : path).toString());
+            }
+        }, media);
     }
 
     private void startInForeground() {
@@ -481,6 +496,7 @@ public class CoreService extends Service {
                 "location", checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED,
                 "bluetooth", Build.VERSION.SDK_INT < 31 || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED,
                 "microphone", checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED,
+                "allFiles", LocalFiles.access(this),
                 "defaultHome", isHome);
     }
 }

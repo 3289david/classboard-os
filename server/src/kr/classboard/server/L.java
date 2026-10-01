@@ -30,6 +30,10 @@ final class L {
         System.err.println(java.time.LocalDateTime.now().withNano(0) + " " + level + " " + tag + ": " + msg + (t == null ? "" : " - " + t));
     }
 
+    static void i(String tag, String msg) {
+        System.err.println(java.time.LocalDateTime.now().withNano(0) + " INFO " + tag + ": " + msg);
+    }
+
     static void w(String tag, String msg, Throwable t) {
         log(ANDROID_W, "WARN", tag, msg, t);
     }

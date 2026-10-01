@@ -48,7 +48,8 @@ public final class ServerMain {
         applyPreset(store, new File(dir, "config.json"));
         Store devices = new Store(new File(dir, "devices.json"));
         DataFetcher fetcher = new DataFetcher(new File(dir, "data.json"));
-        ServerApi api = new ServerApi(store, devices, fetcher, env("STATUS_KEY", ""));
+        OfficeSetup.start(dir); // LibreOffice + HWP import for attachments, installed automatically when missing
+        ServerApi api = new ServerApi(store, devices, fetcher, env("STATUS_KEY", ""), dir);
 
         HttpServer http = new HttpServer(api::handle);
         http.start(port);

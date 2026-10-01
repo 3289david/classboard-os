@@ -154,6 +154,65 @@ public class NativeBridge {
 
     // ---------------------------------------------------------------- system status
 
+    // ---------------------------------------------------------------- files on the board and USB drives
+
+    @JavascriptInterface
+    public String fsRoots() {
+        return LocalFiles.roots(act).toString();
+    }
+
+    @JavascriptInterface
+    public String fsList(String path) {
+        try {
+            return LocalFiles.list(path).toString();
+        } catch (Exception e) {
+            return err(e.getMessage());
+        }
+    }
+
+    @JavascriptInterface
+    public String fsOpen(String path) {
+        try {
+            java.io.File f = LocalFiles.checked(path);
+            if (!f.isFile()) return err("파일이 없습니다");
+            Uri u = FilesProvider.uriForPath(f);
+            String mime = Util.mimeFor(f.getName()).split(";")[0];
+            Intent i = new Intent(Intent.ACTION_VIEW).setDataAndType(u, mime)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            act.runOnUiThread(() -> {
+                try {
+                    act.startActivity(i);
+                } catch (Exception e) {
+                    Toast.makeText(act, "이 파일을 열 수 있는 앱이 없습니다", Toast.LENGTH_LONG).show();
+                }
+            });
+            return ok();
+        } catch (Exception e) {
+            return err(e.getMessage());
+        }
+    }
+
+    // ---------------------------------------------------------------- external inputs (HDMI)
+
+    @JavascriptInterface
+    public String inputs() {
+        return ExternalInputs.list(act).toString();
+    }
+
+    @JavascriptInterface
+    public String openInput(String id) {
+        Intent i = ExternalInputs.intentFor(act, id);
+        if (i == null) return err("이 입력을 열 수 없습니다");
+        act.runOnUiThread(() -> {
+            try {
+                act.startActivity(i);
+            } catch (Exception e) {
+                Toast.makeText(act, "외부 입력을 표시할 앱이 없습니다", Toast.LENGTH_LONG).show();
+            }
+        });
+        return ok();
+    }
+
     /** How capable this board is, so the UI can turn effects down on low-end hardware. */
     @JavascriptInterface
     public String perf() {
@@ -360,6 +419,21 @@ public class NativeBridge {
     public String open(String which) {
         Intent i;
         String pkgUri = "package:" + act.getPackageName();
+        if ("allFiles".equals(which)) {
+            if (Build.VERSION.SDK_INT >= 30) {
+                Intent af = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse(pkgUri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                act.runOnUiThread(() -> {
+                    try {
+                        act.startActivity(af);
+                    } catch (Exception e) {
+                        act.startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    }
+                });
+            } else {
+                act.runOnUiThread(() -> act.requestPermissions(new String[]{android.Manifest.permission.READ_EXTERNAL_STORAGE}, 41));
+            }
+            return ok();
+        }
         if (which != null && which.startsWith("appInfo:") && which.substring(8).matches("[A-Za-z0-9_.]{1,200}")) {
             // another app's info page (long press on an icon → 앱 정보)
             pkgUri = "package:" + which.substring(8);

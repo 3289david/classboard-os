@@ -184,6 +184,7 @@
       case 'sleep': $('#sleep').classList.add('on'); break;
       case 'perms': if (S.panel === 'settings') renderSettings(); pollSys(); break;
       case 'folder': if (S.panel === 'files') renderFiles(); break;
+      case 'storage': onStorage(data || {}); break;
       case 'capture':
         if (!data.ok) toast(data.error || '캡처 실패', 5000);
         else if (data.kind === 'shot') toast('화면을 저장했습니다: ' + (data.where || ''));
@@ -425,24 +426,54 @@
 
   function renderTimetableApp() {
     const body = $('#p-body');
+    if (!hasTimetable()) { body.innerHTML = '<div class="empty">' + ic('info') + '시간표를 불러오는 중입니다</div>'; return; }
     const sl = slots();
-    const day = (date) => {
-      const ps = periodsOn(date);
-      if (!ps.length) return '<div class="empty">' + ic('calendar') + '수업이 없는 날입니다</div>';
-      const nowM = C.nowMin(), isToday = date === C.today();
-      return '<div class="tt">' + ps.map((e) => {
-        const s = sl.find((x) => x.p === e.p);
-        let c = 'p' + (e.cancel ? ' cancel' : '');
-        if (isToday && S.seg.type === 'class' && S.seg.slot.p === e.p) c += ' cur';
-        else if (isToday && s && nowM >= s.end) c += ' past';
-        const tag = e.ch ? '<span class="chip orange">' + esc(chLabel(e)) + '</span>' : e.cancel ? '<span class="chip gray">없음</span>' : '';
-        return '<div class="' + c + '"><div class="n">' + e.p + '<small>' + (s ? C.hm(s.start) : '') + '</small></div><div class="s">' + esc(e.s || '-') + '<small>' + esc([e.t, roomOf(e)].filter(Boolean).join(' · ')) + '</small></div>' + tag + '</div>';
-      }).join('') + '</div>';
+    const nowM = C.nowMin();
+    const today = C.today();
+    const next = nextSchoolDate(today);
+    const isToday = (d) => d === today;
+    const cellCls = (date, e) => {
+      const s = sl.find((x) => x.p === e.p);
+      let c = e.cancel ? ' cancel' : '';
+      if (isToday(date) && S.seg.type === 'class' && S.seg.slot.p === e.p) c += ' cur';
+      else if (isToday(date) && s && nowM >= s.end) c += ' past';
+      return c;
     };
-    const next = nextSchoolDate(C.today());
-    body.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:2.4rem"><div><div class="section-t">' + ic('clock') + '오늘 · ' + C.dateLabel(C.today()) + '</div>' + day(C.today()) +
-      '</div><div><div class="section-t">' + ic('right') + '다음 수업일 · ' + C.dateLabel(next) + '</div>' + day(next) + '</div></div><div class="src">' + ttSource() + '</div>';
+    // today, large
+    const tp = periodsOn(today);
+    const big = tp.length ? '<div class="tt-big">' + tp.map((e) => {
+      const s = sl.find((x) => x.p === e.p);
+      return '<div class="tb' + cellCls(today, e) + '"><span class="n">' + e.p + '교시</span><span class="tm">' + (s ? C.hm(s.start) + ' ~ ' + C.hm(s.end) : '') + '</span>' +
+        '<b>' + esc(e.s || '-') + '</b><span class="t">' + esc([e.t ? e.t + ' 선생님' : '', roomOf(e)].filter(Boolean).join(' · ')) + '</span>' +
+        (e.ch ? '<span class="chip orange">' + esc(chLabel(e)) + '</span>' : '') + '</div>';
+    }).join('') + '</div>' : '<div class="empty">' + ic('calendar') + '오늘은 수업이 없습니다</div>';
+    // next school day, small
+    const np = periodsOn(next);
+    const small = np.length ? '<div class="tt-small">' + np.map((e) => '<div class="ts' + (e.cancel ? ' cancel' : '') + '"><span class="n">' + e.p + '</span><b>' + esc(e.s || '-') + '</b>' +
+      (e.ch ? '<i class="dot"></i>' : '') + '</div>').join('') + '</div>' : '<div class="empty">수업이 없는 날입니다</div>';
+    // this school week (Mon-Fri); on weekends the coming week
+    const dow = C.parseIso(today).getDay();
+    const monday = C.addDays(today, dow === 0 ? 1 : dow === 6 ? 2 : 1 - dow);
+    const week = [0, 1, 2, 3, 4].map((i) => C.addDays(monday, i));
+    const rows = Math.max(0, ...week.map((d) => periodsOn(d).reduce((m, e) => Math.max(m, e.p), 0)));
+    let grid = '<div class="tt-week" style="grid-template-columns:4.6rem repeat(5,1fr)"><div></div>' +
+      week.map((d) => '<div class="wh' + (isToday(d) ? ' today' : '') + '">' + C.DOW[C.parseIso(d).getDay()] + '<small>' + C.shortDate(d).split('(')[0] + '</small></div>').join('');
+    for (let p = 1; p <= rows; p++) {
+      const s = sl.find((x) => x.p === p);
+      grid += '<div class="wp">' + p + '<small>' + (s ? C.hm(s.start) : '') + '</small></div>';
+      week.forEach((d) => {
+        const e = periodsOn(d).find((x) => x.p === p);
+        grid += e ? '<div class="wc' + cellCls(d, e) + (isToday(d) ? ' today' : '') + (e.ch ? ' ch' : '') + '"><b>' + esc(e.s || '-') + '</b><small>' + esc(e.t || '') + '</small></div>'
+          : '<div class="wc empty-c' + (isToday(d) ? ' today' : '') + '"></div>';
+      });
+    }
+    grid += '</div>';
+    if (!rows) grid = '<div class="empty">' + ic('calendar') + '이번 주 시간표가 없습니다</div>';
+    body.innerHTML = '<div class="tt-app"><div class="tt-left"><div class="section-t">' + ic('clock') + '오늘 · ' + C.dateLabel(today) + '</div>' + big +
+      '<div class="section-t" style="margin-top:1.6rem">' + ic('right') + (next === C.addDays(today, 1) ? '내일' : '다음 수업일') + ' · ' + C.dateLabel(next) + '</div>' + small + '</div>' +
+      '<div class="tt-right"><div class="section-t">' + ic('grid') + '이번 주</div>' + grid + '<div class="src">' + ttSource() + '</div></div></div>';
   }
+
 
   // school homepage posts (가정통신문 · 공지사항 · 영양 소식)
   function homepageBoards() {
@@ -517,8 +548,18 @@
         '<p class="muted" style="margin-bottom:1.4rem">' + esc(it ? it.date + ' · ' + it.author : '') + '</p>' +
         (d.files.length ? '<div class="mats" style="margin-bottom:1.4rem">' + d.files.map((f, i) => '<button class="mat" data-f="' + i + '">' + ic(fileIcon(f.name)) + esc(f.name) + ' <span class="dim">' + C.bytes(f.size) + '</span></button>').join('') + '</div>' : '') +
         (d.body ? '<div style="font-size:1.5rem;line-height:1.65;white-space:pre-wrap">' + esc(d.body) + '</div>' : '') +
-        d.images.map((src) => '<img src="' + esc(src) + '" alt="" style="max-width:100%;margin-top:1rem;border-radius:.8rem;background:#fff">').join('') + '</div>';
-      C.$$('[data-f]', body).forEach((b) => { b.onclick = () => { const f = d.files[Number(b.dataset.f)]; toast('"' + f.name + '" 여는 중...'); native('openWebFile', f.url, f.name); }; });
+        d.images.map((src) => '<img src="' + esc(src) + '" alt="" style="max-width:100%;margin-top:1rem;border-radius:.8rem;background:#fff">').join('') +
+        '<div id="post-doc"></div></div>';
+      const docFile = d.files.find((f) => DOC_EXT.test(f.name));
+      if (docFile) inlineDoc(docFile, o);
+      C.$$('[data-f]', body).forEach((b) => {
+        b.onclick = (ev) => {
+          const f = d.files[Number(b.dataset.f)];
+          if (DOC_EXT.test(f.name)) { openPanel('doc', { url: f.url, name: f.name, back: { app: 'post', opts: o } }, ev.currentTarget); return; }
+          toast('"' + f.name + '" 여는 중...');
+          native('openWebFile', f.url, f.name);
+        };
+      });
     } catch (e) {
       if (S.panel !== 'post' || S.panelOpts !== o) return;
       body.innerHTML = '<div class="empty" style="flex-direction:column;align-items:flex-start;gap:1rem">' + esc(e.message) + '<button class="btn pri" id="hp-retry">' + ic('refresh') + '다시 시도</button></div>';
@@ -759,6 +800,8 @@
     record: { name: '화면 녹화', open: () => { native('capture', true); setTimeout(pollSys, 1500); } },
     split: { name: '화면 분할', render: () => renderAndroidApps(true) },
     files: { name: '파일', render: renderFiles },
+    hdmi: { name: '외부 입력', render: renderInputs },
+    doc: { name: '문서', icon: 'notices', render: renderDocApp, hidden: true, full: true },
     room: { name: '교실 정보', render: renderRoom },
     drawer: { name: '모든 앱', render: renderDrawer, hidden: true },
     settings: { name: '설정', render: renderSettings },
@@ -1026,7 +1069,7 @@
     const a = APPS[S.panel];
     const body = $('#p-body');
     body.innerHTML = '';
-    body.style.padding = S.panel === 'settings' ? '0' : '';
+    body.style.padding = S.panel === 'settings' || S.panel === 'files' ? '0' : '';
     if (a && a.render) a.render();
   }
   function goHome() {
@@ -1114,6 +1157,7 @@
       if ($('#class-alert').classList.contains('on')) { hideClassAlert(); return; }
       if ($('#recents').classList.contains('on')) { closeRecents(); return; }
       if (S.panel === 'post') { openPanel('notices', { menuId: S.panelOpts.menuId }); return; }
+      if (S.panel === 'doc' && S.panelOpts.back) { openPanel(S.panelOpts.back.app, S.panelOpts.back.opts || {}); return; }
       if (S.panel) { closePanel(); return; }
       S.manualView = null;
       setView(autoView() === S.view ? 'home' : autoView());
@@ -1155,46 +1199,196 @@
   }
   function hideClassAlert() { $('#class-alert').classList.remove('on', 'flash'); $('#edge-flash').classList.remove('on'); }
 
-  // ---------------------------------------------------------------- files (USB)
-  let fileNav = null;
+  // ---------------------------------------------------------------- files: internal storage and USB drives
+  const FS = { path: null, root: null };
+  const IMG = /\.(png|jpe?g|gif|webp|bmp)$/i;
+  function placeIcon(kind) {
+    return { internal: 'storage', download: 'download', board: 'image', record: 'video', docs: 'file', photos: 'image', usb: 'usb' }[kind] || 'folder';
+  }
   function renderFiles() {
     const body = $('#p-body');
-    if (!N) { body.innerHTML = '<div class="empty">' + ic('info') + '전자칠판 앱에서만 사용할 수 있습니다</div>'; return; }
-    if (fileNav) { renderDir(); return; }
-    let sys = S.sys;
-    try { sys = JSON.parse(N.sys()); } catch (e) { /* keep */ }
-    let trees = [];
-    try { trees = JSON.parse(N.trees()); } catch (e) { trees = []; }
-    let html = '<div><div class="section-t">' + ic('storage') + '저장 장치</div>';
-    (sys && sys.storage || []).forEach((v) => {
-      const used = v.total ? (v.total - v.free) / v.total : 0;
-      html += '<div class="list-row">' + ic(v.removable ? 'usb' : 'storage') + '<div class="grow"><b>' + esc(v.label) + '</b>' +
-        (v.total ? '<div class="bar"><i style="width:' + Math.round(used * 100) + '%"></i></div><span>' + C.bytes(v.free) + ' 남음 / ' + C.bytes(v.total) + '</span>' : '<span>' + esc(v.state || '') + '</span>') + '</div>' +
-        (v.index != null ? '<button class="btn" data-vol="' + v.index + '">' + ic('folder') + '폴더 열기</button>' : '') + '</div>';
-    });
-    html += '<div class="section-t">' + ic('folder') + '열어 둔 폴더</div>';
-    html += trees.length ? trees.map((t) => '<div class="list-row">' + ic('folder') + '<div class="grow"><b>' + esc(decodeURIComponent(t.name)) + '</b></div><button class="btn pri" data-tree="' + esc(t.uri) + '">열기</button><button class="btn" data-forget="' + esc(t.uri) + '">' + ic('x') + '</button></div>').join('')
-      : '<div class="empty">' + ic('info') + 'USB를 꽂은 뒤 "폴더 열기"로 접근을 허용하세요</div>';
-    html += '<div style="margin-top:1rem"><button class="btn" id="pick-any">' + ic('search') + '다른 위치에서 폴더 선택</button></div></div>';
-    body.innerHTML = html;
-    C.$$('[data-vol]', body).forEach((b) => { b.onclick = () => native('pickFolder', Number(b.dataset.vol)); });
-    C.$$('[data-tree]', body).forEach((b) => { b.onclick = () => { fileNav = { tree: b.dataset.tree, stack: [] }; renderDir(); }; });
-    C.$$('[data-forget]', body).forEach((b) => { b.onclick = () => { native('forgetTree', b.dataset.forget); renderFiles(); }; });
-    $('#pick-any').onclick = () => native('pickFolder', -1);
+    if (!N || !N.fsRoots) { body.innerHTML = '<div class="empty">' + ic('info') + '전자칠판 앱에서만 사용할 수 있습니다</div>'; return; }
+    let info;
+    try { info = JSON.parse(N.fsRoots()); } catch (e) { info = { access: false, places: [], usb: [] }; }
+    if (!info.access) {
+      body.innerHTML = '<div class="fs-perm"><div class="tile">' + svgFor('files') + '</div><h2>파일을 보려면 권한이 필요합니다</h2>' +
+        '<p>내부 저장공간에 저장된 칠판 · 캡처 · 녹화 파일과 USB 메모리를 보려면 "모든 파일 접근"을 허용해 주세요.</p>' +
+        '<button class="btn pri" id="fs-allow">' + ic('lock') + '권한 허용하기</button></div>';
+      $('#fs-allow').onclick = () => native('open', 'allFiles');
+      return;
+    }
+    const places = info.places.filter((p) => p.kind === 'internal' || p.exists !== false);
+    const usb = info.usb || [];
+    if (!FS.path || !places.concat(usb).some((p) => FS.path.indexOf(p.path) === 0)) {
+      FS.path = usb.length && FS.preferUsb ? usb[0].path : places[0].path;
+      FS.preferUsb = false;
+    }
+    const placeRow = (p, kind) => {
+      const on = FS.path === p.path || (FS.path.indexOf(p.path + '/') === 0 && !places.concat(usb).some((q) => q !== p && q.path.length > p.path.length && FS.path.indexOf(q.path) === 0));
+      const cap = p.total ? '<span class="cap"><i style="width:' + Math.round((p.total - p.free) / p.total * 100) + '%"></i></span><small>' + C.bytes(p.free) + ' 남음</small>' : '';
+      return '<button class="fs-place' + (on ? ' on' : '') + '" data-root="' + esc(p.path) + '">' + ic(placeIcon(kind || p.kind)) + '<span class="nm">' + esc(p.label) + cap + '</span></button>';
+    };
+    body.style.padding = '0';
+    body.innerHTML = '<div class="fs"><div class="fs-side">' + places.map((p) => placeRow(p)).join('') +
+      '<div class="fs-group">USB · 외부 저장장치</div>' + (usb.length ? usb.map((p) => placeRow(p, 'usb')).join('') : '<div class="fs-none">USB 메모리를 꽂으면 여기에 나타납니다</div>') +
+      '</div><div class="fs-main" id="fs-main"></div></div>';
+    C.$$('[data-root]', body).forEach((b) => { b.onclick = () => { FS.path = b.dataset.root; renderFiles(); }; });
+    renderDirList(places.concat(usb));
   }
-  function renderDir() {
+  function renderDirList(roots) {
+    const main = $('#fs-main');
+    let d;
+    try { d = JSON.parse(N.fsList(FS.path)); } catch (e) { d = { error: String(e) }; }
+    const root = roots.filter((p) => FS.path.indexOf(p.path) === 0).sort((x, y) => y.path.length - x.path.length)[0];
+    const rel = root ? FS.path.slice(root.path.length).split('/').filter(Boolean) : [];
+    let crumbs = '<button data-go="' + esc(root ? root.path : FS.path) + '">' + esc(root ? root.label : FS.path) + '</button>';
+    let acc = root ? root.path : '';
+    rel.forEach((seg) => { acc += '/' + seg; crumbs += ic('right') + '<button data-go="' + esc(acc) + '">' + esc(seg) + '</button>'; });
+    if (d.error) {
+      main.innerHTML = '<div class="fs-crumbs">' + crumbs + '</div><div class="empty">' + ic('info') + esc(d.error) + '</div>';
+    } else if (!d.items.length) {
+      main.innerHTML = '<div class="fs-crumbs">' + crumbs + '</div><div class="empty">' + ic('folder') + '빈 폴더입니다</div>';
+    } else {
+      main.innerHTML = '<div class="fs-crumbs">' + crumbs + '<span class="dim">' + d.items.length + '개</span></div><div class="fs-list">' + d.items.map((f, i) => {
+        const when = new Date(f.mtime);
+        const date = C.iso(when) === C.today() ? '오늘 ' + C.pad(when.getHours()) + ':' + C.pad(when.getMinutes()) : C.iso(when).replace(/-/g, '. ');
+        const thumb = !f.dir && IMG.test(f.name) ? '<img class="fs-th" loading="lazy" src="/api/local/thumb?path=' + encodeURIComponent(f.path) + '" alt="">' : '<span class="fs-ic">' + ic(f.dir ? 'folder' : fileIcon(f.name)) + '</span>';
+        return '<button class="fs-row" data-i="' + i + '">' + thumb + '<span class="fs-nm">' + esc(f.name) + '</span><span class="fs-meta">' + (f.dir ? f.count + '개 항목' : C.bytes(f.size)) + '</span><span class="fs-meta">' + date + '</span></button>';
+      }).join('') + '</div>';
+      C.$$('.fs-row', main).forEach((r) => {
+        r.onclick = () => {
+          const f = d.items[Number(r.dataset.i)];
+          if (f.dir) { FS.path = f.path; renderDirList(roots); }
+          else if (DOC_EXT.test(f.name)) openPanel('doc', { path: f.path, name: f.name, back: { app: 'files' } }, r);
+          else native('fsOpen', f.path);
+        };
+      });
+    }
+    C.$$('[data-go]', main).forEach((b) => { b.onclick = () => { FS.path = b.dataset.go; renderDirList(roots); }; });
+  }
+  function onStorage(d) {
+    if (d.mounted) {
+      toast('USB 메모리가 연결되었습니다. 누르면 파일 앱에서 엽니다.', 6000);
+      $('#toast').onclick = () => { $('#toast').classList.remove('on'); FS.preferUsb = true; FS.path = null; openApp('files'); };
+    } else toast('USB 메모리가 분리되었습니다', 3000);
+    if (S.panel === 'files') { if (d.mounted) { FS.preferUsb = true; FS.path = null; } renderFiles(); }
+  }
+
+  // ---------------------------------------------------------------- 문서 보기 (PDF · HWP · 오피스)
+  // The school server turns the file into page pictures; a PDF can also be drawn by the board itself.
+  const DOC_EXT = /\.(pdf|hwp|hwpx|docx?|pptx?|xlsx?|odt|odp|ods)$/i;
+  const DOC = { zoom: 1 };
+  async function renderDocApp() {
+    const o = S.panelOpts;
     const body = $('#p-body');
-    const top = fileNav.stack[fileNav.stack.length - 1];
-    const r = native('listDir', fileNav.tree, top ? top.id : '');
-    if (!r || r.error) { fileNav = null; renderFiles(); return; }
-    const items = r.items.sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name));
-    body.innerHTML = '<div><div class="crumbs"><button class="btn sm" id="fs-back">' + ic('left') + '뒤로</button><span class="chip">' + esc(decodeURIComponent(fileNav.tree.split('/').pop())) + '</span>' +
-      fileNav.stack.map((s) => '<span class="dim">/</span><span class="chip">' + esc(s.name) + '</span>').join('') + '</div>' +
-      (items.length ? items.map((f, i) => '<div class="file-row" data-i="' + i + '">' + ic(f.dir ? 'folder' : fileIcon(f.name)) + '<span>' + esc(f.name) + '</span><span class="sz">' + (f.dir ? '' : C.bytes(f.size)) + '</span></div>').join('') : '<div class="empty">' + ic('folder') + '빈 폴더입니다</div>') + '</div>';
-    $('#fs-back').onclick = () => { if (fileNav.stack.length) fileNav.stack.pop(); else fileNav = null; renderFiles(); };
-    C.$$('.file-row', body).forEach((row) => {
-      row.onclick = () => { const f = items[Number(row.dataset.i)]; if (f.dir) { fileNav.stack.push({ id: f.id, name: f.name }); renderDir(); } else native('openDoc', fileNav.tree, f.id, f.mime || ''); };
-    });
+    const isPdf = /\.pdf$/i.test(o.name || '');
+    body.innerHTML = '<div class="doc"><div class="doc-bar"><b class="doc-nm">' + esc(o.name || '문서') + '</b><span class="doc-pg" id="doc-pg"></span>' +
+      '<button class="bb-t" data-z="-1">' + ic('minus') + '</button><button class="bb-t" data-z="0">맞춤</button><button class="bb-t" data-z="1">' + ic('plus') + '</button>' +
+      '<button class="bb-t" id="doc-ext">다른 앱으로 열기</button><button class="bb-t" id="doc-x">' + ic('x') + '</button></div>' +
+      '<div class="doc-pages" id="doc-pages"><div class="doc-wait"><span class="dots-loader"><i></i><i></i><i></i></span><span id="doc-step">문서를 여는 중</span></div></div></div>';
+    $('#doc-x').onclick = () => navKey('back');
+    $('#doc-ext').onclick = () => { if (o.path) native('fsOpen', o.path); else native('openWebFile', o.url, o.name); };
+    C.$$('[data-z]', body).forEach((b) => { b.onclick = () => { const z = Number(b.dataset.z); DOC.zoom = z === 0 ? 1 : Math.max(1, Math.min(3, DOC.zoom + z * 0.5)); applyZoom(); }; });
+    const step = (t) => { const el = $('#doc-step'); if (el) el.textContent = t; };
+    const alive = () => S.panel === 'doc' && S.panelOpts === o;
+    let pages = 0, src = null, err = null;
+    try {
+      const d = await loadDoc(o, step, alive);
+      pages = d.pages; src = d.src;
+    } catch (e) { err = e; }
+    if (!alive()) return;
+    const box = $('#doc-pages');
+    if (err || !pages) {
+      box.innerHTML = '<div class="doc-wait err">' + esc((err && err.message) || '쪽이 없는 문서입니다') + '<button class="btn pri" id="doc-retry">' + ic('refresh') + '다시 시도</button></div>';
+      $('#doc-retry').onclick = () => renderDocApp();
+      return;
+    }
+    DOC.zoom = 1;
+    box.innerHTML = Array.from({ length: pages }, (_, i) => '<div class="doc-page"><img loading="lazy" decoding="async" src="' + src(i + 1) + '" alt="' + (i + 1) + '쪽"></div>').join('');
+    const pg = $('#doc-pg');
+    const upd = () => {
+      const kids = box.children, mid = box.scrollTop + box.clientHeight / 2;
+      let n = 1;
+      for (let i = 0; i < kids.length; i++) if (kids[i].offsetTop <= mid) n = i + 1;
+      pg.textContent = n + ' / ' + pages + '쪽';
+    };
+    box.onscroll = upd;
+    upd();
+    applyZoom();
+  }
+  // attachment pages inside the post (가정통신문 · 공지사항)
+  async function inlineDoc(f, o) {
+    const box = $('#post-doc');
+    if (!box) return;
+    box.innerHTML = '<div class="post-doc-h">' + ic(fileIcon(f.name)) + '<b>' + esc(f.name) + '</b><button class="btn sm" id="pd-open">' + ic('search') + '크게 보기</button></div>' +
+      '<div class="post-doc-wait"><span class="dots-loader"><i></i><i></i><i></i></span><span id="pd-step">첨부파일을 펼치는 중</span></div>';
+    $('#pd-open').onclick = (ev) => openPanel('doc', { url: f.url, name: f.name, back: { app: 'post', opts: o } }, ev.currentTarget);
+    const alive = () => S.panel === 'post' && S.panelOpts === o && document.body.contains(box);
+    try {
+      const d = await loadDoc({ url: f.url, name: f.name }, (t) => { const el = $('#pd-step'); if (el) el.textContent = t; }, alive);
+      if (!alive()) return;
+      const wait = box.querySelector('.post-doc-wait');
+      wait.outerHTML = Array.from({ length: d.pages }, (_, i) => '<img class="post-doc-pg" loading="lazy" decoding="async" src="' + d.src(i + 1) + '" alt="' + (i + 1) + '쪽">').join('');
+      C.$$('.post-doc-pg', box).forEach((im) => { im.onclick = (ev) => openPanel('doc', { url: f.url, name: f.name, back: { app: 'post', opts: o } }, ev.currentTarget); });
+    } catch (e) {
+      if (!alive()) return;
+      const wait = box.querySelector('.post-doc-wait');
+      if (wait) wait.innerHTML = '<span class="muted">' + esc(e.message) + '</span>';
+    }
+  }
+
+  /** Pages of a document: from the school server, or drawn on the board for PDFs. */
+  async function loadDoc(o, step, alive) {
+    const isPdf = /\.pdf$/i.test(o.name || '');
+    if (o.path && isPdf) {
+      // a PDF on this board: the built-in renderer is quick, nothing to send anywhere
+      const d = await C.get('/api/local/pdf/info?path=' + encodeURIComponent(o.path));
+      return { pages: d.pages, src: (p) => '/api/local/pdf/page?key=' + d.key + '&p=' + p };
+    }
+    try {
+      let d = o.path ? await localPost('/api/local/docupload?path=' + encodeURIComponent(o.path), {})
+        : await C.get('/api/doc/info?url=' + encodeURIComponent(o.url) + '&name=' + encodeURIComponent(o.name));
+      const t0 = Date.now();
+      while (d.status === 'working' && alive() && Date.now() - t0 < 180000) {
+        step('학교 서버가 문서를 준비하는 중 · ' + (d.step || ''));
+        await sleep(1200);
+        d = await C.get('/api/doc/info?id=' + d.id);
+      }
+      if (d.status === 'error') throw new Error(d.error);
+      if (d.status !== 'ready') throw new Error('문서 준비가 너무 오래 걸립니다');
+      return { pages: d.pages, src: (p) => '/api/doc/page?id=' + d.id + '&p=' + p };
+    } catch (e) {
+      if (!(isPdf && o.url) || !alive()) throw e;
+      // school server unavailable: draw the PDF on the board
+      step('전자칠판에서 직접 여는 중');
+      const d = await C.get('/api/local/pdf/info?url=' + encodeURIComponent(o.url) + '&name=' + encodeURIComponent(o.name));
+      return { pages: d.pages, src: (p) => '/api/local/pdf/page?key=' + d.key + '&p=' + p };
+    }
+  }
+  function applyZoom() {
+    const box = $('#doc-pages');
+    if (box) box.style.setProperty('--z', DOC.zoom);
+  }
+
+  // ---------------------------------------------------------------- 외부 입력 (HDMI)
+  function renderInputs() {
+    const body = $('#p-body');
+    if (!N || !N.inputs) { body.innerHTML = '<div class="empty">' + ic('info') + '전자칠판 앱에서만 사용할 수 있습니다</div>'; return; }
+    let d;
+    try { d = JSON.parse(N.inputs()); } catch (e) { d = { inputs: [], apps: [] }; }
+    const btn = (x) => '<button class="in-btn" data-in="' + esc(x.id) + '"><span class="in-port">' + esc(x.type === '앱' ? '앱' : x.type) + '</span><b>' + esc(x.label) + '</b></button>';
+    let html = '';
+    if (d.inputs.length) html += '<div class="section-t">' + ic('tv') + '외부 입력</div><div class="in-grid">' + d.inputs.map(btn).join('') + '</div>';
+    if (d.apps.length) html += '<div class="section-t">' + ic('apps') + '제조사 입력 전환 앱</div><div class="in-grid">' + d.apps.map(btn).join('') + '</div>';
+    if (!html) {
+      html = '<div class="fs-perm"><div class="tile">' + svgFor('hdmi') + '</div><h2>외부 입력을 찾지 못했습니다</h2>' +
+        '<p>이 기기는 안드로이드 표준 외부 입력(TV 입력)을 제공하지 않고, 입력 전환 앱도 찾지 못했습니다. ' +
+        '전자칠판 리모컨이나 본체의 입력(소스) 버튼으로 HDMI를 선택해 주세요.</p></div>';
+    } else {
+      html += '<p class="muted" style="margin-top:1.6rem;font-size:1.1rem">외부 입력 화면에서 돌아올 때는 화면 아래의 ○ 버튼을 누르세요.</p>';
+    }
+    body.innerHTML = '<div>' + html + '</div>';
+    C.$$('[data-in]', body).forEach((b) => { b.onclick = () => { const r = native('openInput', b.dataset.in); if (r && !r.error) closePanel(); }; });
   }
 
   // ---------------------------------------------------------------- room info
@@ -1530,7 +1724,7 @@
       ['defaultHome', '기본 홈 앱', '전원을 켜면 이 화면이 바로 뜸', 'home'], ['overlay', '다른 앱 위에 표시', '화면 메모, 탐색 버튼', 'overlay'],
       ['writeSettings', '시스템 설정 변경', '밝기 조절', 'writeSettings'], ['accessibility', '접근성 서비스', '뒤로 · 최근 앱, 화면 분할', 'accessibility'],
       ['deviceAdmin', '기기 관리자', '일과 종료 후 화면 끄기', 'deviceAdmin'], ['notifications', '알림', '실행 상태 표시', 'notifications'],
-      ['location', '위치', 'Wi-Fi 이름 표시', 'location'], ['bluetooth', '블루투스', '연결된 기기 표시', 'bluetoothPerm'], ['microphone', '마이크', '화면 녹화 소리', 'microphone'],
+      ['location', '위치', 'Wi-Fi 이름 표시', 'location'], ['bluetooth', '블루투스', '연결된 기기 표시', 'bluetoothPerm'], ['microphone', '마이크', '화면 녹화 소리', 'microphone'], ['allFiles', '모든 파일 접근', '파일 앱 (내부 저장공간 · USB)', 'allFiles'],
     ];
     c.innerHTML = '<h1>권한</h1>' + group('', rows.map((p) => '<div class="set-row"><span class="dot' + (perms[p[0]] ? ' on' : '') + '"></span><div class="lb"><b>' + p[1] + '</b><span>' + p[2] + '</span></div><button class="btn sm" data-open="' + p[3] + '">' + (perms[p[0]] ? '설정' : '허용') + '</button></div>').join('')) +
       group('시스템', row('안드로이드 설정', '', '<button class="btn sm" data-open="settings">열기</button>') + row('날짜 · 시간', '', '<button class="btn sm" data-open="date">열기</button>') + row('앱 정보', '', '<button class="btn sm" data-open="appInfo">열기</button>'));
