@@ -31,9 +31,6 @@ public class Overlays {
     private View emergencyView;
     private String emergencyId;
     private View classAlertView;
-    private MemoView memoView;
-    private View memoBar;
-    private boolean memoPassThrough;
 
     public interface Ack {
         void ack(String id);
@@ -244,14 +241,19 @@ public class Overlays {
 
     // ---------------------------------------------------------------- memo
 
+    private MemoOverlay memo;
+
     public boolean memoShown() {
-        return memoView != null;
+        return memo != null && memo.shown();
     }
 
     public void toggleMemo() {
         ui.post(() -> {
-            if (memoView != null) hideMemoNow();
-            else showMemoNow();
+            if (memoShown()) hideMemoNow();
+            else if (allowed()) {
+                if (memo == null) memo = new MemoOverlay(ctx, wm);
+                memo.show();
+            }
         });
     }
 
@@ -259,87 +261,8 @@ public class Overlays {
         ui.post(this::hideMemoNow);
     }
 
-    private void showMemoNow() {
-        if (!allowed()) return;
-        memoView = new MemoView(ctx);
-        memoPassThrough = false;
-        WindowManager.LayoutParams lp = params(false, true);
-        try {
-            wm.addView(memoView, lp);
-        } catch (Exception e) {
-            memoView = null;
-            return;
-        }
-        LinearLayout bar = new LinearLayout(ctx);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setPadding(dp(10), dp(8), dp(10), dp(8));
-        bar.setBackground(rounded(0xF01B1B1F, dp(28)));
-        int[] colors = {0xFFE53935, 0xFF1E88E5, 0xFF43A047, 0xFFFDD835, 0xFF111111, 0xFFFFFFFF};
-        for (int c : colors) {
-            View sw = new View(ctx);
-            GradientDrawable g = rounded(c, dp(20));
-            g.setStroke(dp(2), 0x66FFFFFF);
-            sw.setBackground(g);
-            LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(dp(40), dp(40));
-            l.setMargins(dp(6), 0, dp(6), 0);
-            sw.setOnClickListener(v -> {
-                memoView.setColor(c);
-                memoView.setEraser(false);
-            });
-            bar.addView(sw, l);
-        }
-        addBarButton(bar, "굵게", v -> memoView.cycleWidth());
-        addBarButton(bar, "지우개", v -> memoView.setEraser(true));
-        addBarButton(bar, "전체 지우기", v -> memoView.clear());
-        final TextView[] pass = new TextView[1];
-        pass[0] = addBarButton(bar, "터치 통과", v -> {
-            memoPassThrough = !memoPassThrough;
-            WindowManager.LayoutParams mlp = (WindowManager.LayoutParams) memoView.getLayoutParams();
-            if (memoPassThrough) mlp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-            else mlp.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-            wm.updateViewLayout(memoView, mlp);
-            pass[0].setText(memoPassThrough ? "필기 재개" : "터치 통과");
-        });
-        addBarButton(bar, "닫기", v -> hideMemoNow());
-        WindowManager.LayoutParams blp = params(false, false);
-        blp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        blp.y = dp(84);
-        fitWindow(bar, blp);
-        try {
-            wm.addView(bar, blp);
-            memoBar = bar;
-        } catch (Exception ignored) {
-        }
-    }
-
-    private TextView addBarButton(LinearLayout bar, String label, View.OnClickListener l) {
-        TextView b = new TextView(ctx);
-        b.setText(label);
-        b.setTextColor(Color.WHITE);
-        b.setTextSize(18);
-        b.setPadding(dp(16), dp(8), dp(16), dp(8));
-        // Single line so the overlay window grows instead of wrapping labels at dialog width.
-        b.setSingleLine(true);
-        b.setOnClickListener(l);
-        bar.addView(b);
-        return b;
-    }
-
     private void hideMemoNow() {
-        if (memoView != null) {
-            try {
-                wm.removeView(memoView);
-            } catch (Exception ignored) {
-            }
-        }
-        if (memoBar != null) {
-            try {
-                wm.removeView(memoBar);
-            } catch (Exception ignored) {
-            }
-        }
-        memoView = null;
-        memoBar = null;
+        if (memo != null) memo.hide();
     }
 
     // ---------------------------------------------------------------- floating navigation bar
@@ -444,108 +367,5 @@ public class Overlays {
             hideMemoNow();
             hideClassAlertNow();
         });
-    }
-
-    /** Transparent drawing surface. */
-    static class MemoView extends FrameLayout {
-        private Bitmap bmp;
-        private Canvas cv;
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Path path = new Path();
-        private final float[] widths = {4, 8, 14, 24};
-        private int wi = 1;
-        private boolean eraser;
-        private float lx, ly;
-
-        MemoView(Context c) {
-            super(c);
-            setWillNotDraw(false);
-            setBackgroundColor(0x01000000);
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setStrokeJoin(Paint.Join.ROUND);
-            paint.setColor(0xFFE53935);
-            applyWidth();
-        }
-
-        private void applyWidth() {
-            float d = getResources().getDisplayMetrics().density;
-            paint.setStrokeWidth(widths[wi] * d * (eraser ? 4 : 1));
-        }
-
-        void setColor(int c) {
-            paint.setColor(c);
-        }
-
-        void cycleWidth() {
-            wi = (wi + 1) % widths.length;
-            applyWidth();
-        }
-
-        void setEraser(boolean e) {
-            eraser = e;
-            paint.setXfermode(e ? new PorterDuffXfermode(PorterDuff.Mode.CLEAR) : null);
-            applyWidth();
-        }
-
-        void clear() {
-            if (bmp != null) bmp.eraseColor(Color.TRANSPARENT);
-            invalidate();
-        }
-
-        @Override
-        protected void onSizeChanged(int w, int h, int ow, int oh) {
-            if (w <= 0 || h <= 0) return;
-            Bitmap nb = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-            Canvas nc = new Canvas(nb);
-            if (bmp != null) nc.drawBitmap(bmp, 0, 0, null);
-            bmp = nb;
-            cv = nc;
-        }
-
-        @Override
-        protected void onDraw(Canvas canvas) {
-            if (bmp != null) canvas.drawBitmap(bmp, 0, 0, null);
-            if (!eraser) canvas.drawPath(path, paint);
-        }
-
-        @Override
-        public boolean onTouchEvent(MotionEvent e) {
-            float x = e.getX(), y = e.getY();
-            switch (e.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    path.reset();
-                    path.moveTo(x, y);
-                    lx = x;
-                    ly = y;
-                    break;
-                case MotionEvent.ACTION_MOVE:
-                    for (int i = 0; i < e.getHistorySize(); i++) {
-                        float hx = e.getHistoricalX(i), hy = e.getHistoricalY(i);
-                        path.quadTo(lx, ly, (hx + lx) / 2, (hy + ly) / 2);
-                        lx = hx;
-                        ly = hy;
-                    }
-                    path.quadTo(lx, ly, (x + lx) / 2, (y + ly) / 2);
-                    lx = x;
-                    ly = y;
-                    if (eraser && cv != null) {
-                        cv.drawPath(path, paint);
-                        path.reset();
-                        path.moveTo(x, y);
-                    }
-                    break;
-                case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_CANCEL:
-                    path.lineTo(x, y);
-                    if (cv != null) cv.drawPath(path, paint);
-                    path.reset();
-                    break;
-                default:
-                    break;
-            }
-            invalidate();
-            return true;
-        }
     }
 }

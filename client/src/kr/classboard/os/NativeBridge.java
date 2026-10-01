@@ -154,6 +154,53 @@ public class NativeBridge {
 
     // ---------------------------------------------------------------- system status
 
+    /** How capable this board is, so the UI can turn effects down on low-end hardware. */
+    @JavascriptInterface
+    public String perf() {
+        android.app.ActivityManager am = (android.app.ActivityManager) act.getSystemService(android.content.Context.ACTIVITY_SERVICE);
+        android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+        am.getMemoryInfo(mi);
+        android.util.DisplayMetrics dm = act.getResources().getDisplayMetrics();
+        return Util.jo("lowRam", am.isLowRamDevice(), "memClass", am.getMemoryClass(), "totalMem", mi.totalMem,
+                "cores", Runtime.getRuntime().availableProcessors(), "sdk", android.os.Build.VERSION.SDK_INT,
+                "width", dm.widthPixels, "height", dm.heightPixels).toString();
+    }
+
+    /** Save a PNG drawn on the board (data URL) to Pictures/ClassBoard. */
+    @JavascriptInterface
+    public String saveImage(String dataUrl, String name) {
+        try {
+            int comma = dataUrl == null ? -1 : dataUrl.indexOf(',');
+            if (comma < 0 || !dataUrl.startsWith("data:image/png;base64")) return err("이미지가 아닙니다");
+            byte[] png = android.util.Base64.decode(dataUrl.substring(comma + 1), android.util.Base64.DEFAULT);
+            String file = (name == null || !name.matches("[A-Za-z0-9_-]{1,60}") ? "board" : name) + ".png";
+            String where;
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                android.content.ContentValues v = new android.content.ContentValues();
+                v.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, file);
+                v.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
+                v.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/ClassBoard");
+                android.net.Uri u = act.getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
+                if (u == null) return err("저장 위치를 만들 수 없습니다");
+                try (java.io.OutputStream o = act.getContentResolver().openOutputStream(u)) {
+                    o.write(png);
+                }
+                where = "사진/ClassBoard";
+            } else {
+                java.io.File dir = new java.io.File(act.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES), "ClassBoard");
+                dir.mkdirs();
+                java.io.File f = new java.io.File(dir, file);
+                try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) {
+                    o.write(png);
+                }
+                where = f.getAbsolutePath();
+            }
+            return Util.jo("ok", true, "where", where).toString();
+        } catch (Exception e) {
+            return err("저장하지 못했습니다: " + e.getMessage());
+        }
+    }
+
     @JavascriptInterface
     public String sys() {
         JSONObject o = new JSONObject();
@@ -313,6 +360,11 @@ public class NativeBridge {
     public String open(String which) {
         Intent i;
         String pkgUri = "package:" + act.getPackageName();
+        if (which != null && which.startsWith("appInfo:") && which.substring(8).matches("[A-Za-z0-9_.]{1,200}")) {
+            // another app's info page (long press on an icon → 앱 정보)
+            pkgUri = "package:" + which.substring(8);
+            which = "appInfo";
+        }
         switch (which) {
             case "wifi":
                 i = new Intent(Build.VERSION.SDK_INT >= 29 ? Settings.Panel.ACTION_WIFI : Settings.ACTION_WIFI_SETTINGS);

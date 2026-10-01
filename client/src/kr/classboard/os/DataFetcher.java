@@ -107,30 +107,38 @@ public class DataFetcher {
         }
     }
 
-    /** Adopt newer school-wide data from the hub so only the hub needs to call external services. */
-    private void pullFromHub(String hubUrl) {
+    /**
+     * Take the whole-school data from the school server, which also sends what it already worked out
+     * (merged calendar events, newest posts). Asks with the last version so an unchanged minute costs a few bytes.
+     * @return true when the server answered
+     */
+    private boolean pullFromHub(String hubUrl) {
+        String ver;
+        synchronized (lock) {
+            ver = data.optString("ver");
+        }
         try {
-            JSONObject o = new JSONObject(Util.httpGet(hubUrl + "/api/shared", java.nio.charset.StandardCharsets.UTF_8, 20000));
-            boolean changed = false;
+            JSONObject o = new JSONObject(Util.httpGet(hubUrl + "/api/shared" + (ver.isEmpty() ? "" : "?since=" + ver), StandardCharsets.UTF_8, 20000));
+            lastServerOk = System.currentTimeMillis();
+            if (o.optBoolean("same")) return true;
             synchronized (lock) {
-                JSONArray names = o.names();
-                for (int i = 0; names != null && i < names.length(); i++) {
-                    String k = names.getString(i);
-                    JSONObject theirs = o.optJSONObject(k);
-                    JSONObject mine = data.optJSONObject(k);
-                    if (theirs == null) continue;
-                    if (mine == null || theirs.optLong("fetchedAt") > mine.optLong("fetchedAt")) {
-                        Util.put(data, k, theirs);
-                        changed = true;
-                    }
+                for (String k : SERVER_KEYS) {
+                    if (o.has(k)) Util.put(data, k, o.opt(k));
                 }
-                if (changed) Util.writeFileAtomic(file, data.toString().getBytes(StandardCharsets.UTF_8));
+                Util.put(data, "ver", o.optString("ver"));
+                data.remove("errors");
+                Util.writeFileAtomic(file, data.toString().getBytes(StandardCharsets.UTF_8));
             }
-            if (changed && onChange != null) onChange.run();
+            if (onChange != null) onChange.run();
+            return true;
         } catch (Exception e) {
-            L.w(TAG, "hub shared data unavailable", e);
+            L.w(TAG, "school server data unavailable", e);
+            return false;
         }
     }
+
+    private static final String[] SERVER_KEYS = {"comciFull", "meals", "schedule", "weather", "homepage", "events", "latest"};
+    private volatile long lastServerOk, lastLocal;
 
     public void refresh(JSONObject config, String cls, boolean force, String hubUrl) {
         synchronized (this) {
@@ -138,9 +146,18 @@ public class DataFetcher {
             running = true;
         }
         try {
-            if (hubUrl != null && !hubUrl.isEmpty()) {
-                pullFromHub(hubUrl);
-                force = false; // the hub already refreshes; fall back to direct fetches only when its data is stale
+            // All fetching and parsing is the school server's job; boards are low-end hardware.
+            if (hubUrl != null && !hubUrl.isEmpty() && pullFromHub(hubUrl)) return;
+            // Server unreachable: fetch directly only after it has been gone a while, and rarely.
+            long now = System.currentTimeMillis();
+            boolean haveData;
+            synchronized (lock) {
+                haveData = data.has("comciFull") || data.has("meals");
+            }
+            if (!force && haveData && (now - lastServerOk < 30 * 60_000L || now - lastLocal < 3 * 3600_000L)) return;
+            lastLocal = now;
+            synchronized (lock) {
+                data.remove("ver"); // the next server answer replaces everything
             }
             int nowMin = Util.nowMinutes();
             boolean schoolHours = nowMin >= 6 * 60 + 30 && nowMin <= 18 * 60;

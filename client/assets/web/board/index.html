@@ -31,12 +31,12 @@
     <section class="view" id="v-home">
       <div class="pages" id="pages">
         <div class="page pg-glance">
-          <div class="glance"><div class="g-time" id="g-time"></div><div class="g-date" id="g-date"></div><div class="g-wx" id="g-wx"></div></div>
+          <div class="glance"><div class="g-time" id="g-time"></div><div class="g-date" id="g-date"></div><div class="g-wx" id="g-wx"></div><button class="search" id="g-search"><svg viewBox="0 0 24 24" class="ic"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m15.5 15.5 5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>검색</span></button></div>
           <div class="card now" id="c-now"></div>
           <div class="tt-strip" id="c-tt"></div>
         </div>
         <div class="page pg-info">
-          <div class="card plain"><h3 id="n-head"><span data-ic="file"></span>가정통신문 · 학교 소식<span class="right" data-ic="right"></span></h3><div class="body" id="c-notices"></div></div>
+          <div class="card plain"><h3 id="n-head"><span data-ic="file"></span>학교 소식<span class="right" data-ic="right"></span></h3><div class="body" id="c-notices"></div></div>
           <div class="col">
             <div class="card plain meal"><h3><span data-ic="meal"></span><span id="meal-title">급식</span><span class="right tabs" id="meal-tabs"></span></h3><div class="body" id="c-meal"></div></div>
             <div class="mini-row">
@@ -63,7 +63,7 @@
       <div class="break-hero" id="b-hero"></div>
       <div class="break-side">
         <div class="card" id="b-weather"></div>
-        <div class="card"><h3><span data-ic="file"></span>가정통신문 · 학교 소식</h3><div class="body" id="b-side"></div></div>
+        <div class="card"><h3><span data-ic="file"></span>학교 소식</h3><div class="body" id="b-side"></div></div>
       </div>
     </section>
   </main>
@@ -78,6 +78,7 @@
 
   <!-- recent apps -->
   <div class="recents" id="recents"></div>
+  <div class="ctx" id="ctx"></div>
 </div>
 
 <div class="class-alert" id="class-alert"></div>
@@ -87,6 +88,7 @@
 <div class="sleep" id="sleep"></div>
 
 <script src="../shared/icons.js"></script>
+<script src="../shared/appicons.js"></script>
 <script src="../shared/core.js"></script>
 <script src="board.js"></script>
 </body>

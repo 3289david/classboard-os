@@ -32,6 +32,8 @@ public final class ServerMain {
     }
 
     public static void main(String[] args) throws Exception {
+        // A host with half-working IPv6 makes every request to the school homepage wait for the IPv6 attempt to time out.
+        System.setProperty("java.net.preferIPv4Stack", "true");
         int port = Integer.parseInt(env("PORT", "8080"));
         File dir = new File(env("DATA_DIR", "data"));
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IllegalStateException("cannot create " + dir);

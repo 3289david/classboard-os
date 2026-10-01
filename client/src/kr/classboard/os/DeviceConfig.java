@@ -48,6 +48,31 @@ public class DeviceConfig {
         }
     }
 
+    /** Home-screen preferences anyone at the board may change: dock apps, search engine, lite mode. */
+    public JSONObject home() {
+        try {
+            return new JSONObject(sp.getString("home", "{}"));
+        } catch (Exception e) {
+            return new JSONObject();
+        }
+    }
+
+    public void setHome(JSONObject o) {
+        JSONObject h = home();
+        org.json.JSONArray dock = o.optJSONArray("dock");
+        if (dock != null) {
+            org.json.JSONArray clean = new org.json.JSONArray();
+            for (int i = 0; i < dock.length() && clean.length() < 6; i++) {
+                String id = dock.optString(i);
+                if (id.matches("[a-z]{2,20}|pkg:[A-Za-z0-9_.]{1,200}")) clean.put(id);
+            }
+            Util.put(h, "dock", clean);
+        }
+        if (o.has("search") && o.optString("search").matches("naver|google|daum")) Util.put(h, "search", o.optString("search"));
+        if (o.has("lite") && o.optString("lite").matches("auto|on|off")) Util.put(h, "lite", o.optString("lite"));
+        sp.edit().putString("home", h.toString()).apply();
+    }
+
     // ---------------------------------------------------------------- installer PIN (protects 설정 → 관리)
 
     public boolean hasPin() { return !sp.getString("pinHash", "").isEmpty(); }
@@ -65,7 +90,7 @@ public class DeviceConfig {
     public JSONObject toJson() {
         return Util.jo("deviceId", deviceId(), "role", role(), "setUp", isSetUp(), "hubUrl", hubUrl(), "defaultServer", SERVER,
                 "serverOverride", !sp.getString("serverUrl", "").isEmpty(), "cls", cls(), "name", name(), "hasPin", hasPin(),
-                "hasKey", !deviceKey().isEmpty(), "settings", settings(), "port", PORT, "ip", Util.localIp());
+                "hasKey", !deviceKey().isEmpty(), "settings", settings(), "home", home(), "port", PORT, "ip", Util.localIp());
     }
 
     /** @return true when the server address changed */

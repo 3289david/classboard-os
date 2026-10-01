@@ -42,9 +42,99 @@ public class Router implements HttpServer.Handler {
         if (p.startsWith("/api/local/")) return local(r, p.substring("/api/local/".length()));
         if (p.startsWith("/api/")) {
             if ("/api/state".equals(p)) return sync.serveState(r);
+            if ("/api/homepage/detail".equals(p)) return postDetail(r);
             return sync.proxy(r);
         }
         return staticFile(r);
+    }
+
+    // ------------------------------------------------------------------ homepage posts
+
+    /**
+     * Post detail: the school server (which keeps recent posts ready), then the school homepage directly,
+     * then the copy this board saved last time. Opened posts are kept on disk so they open instantly.
+     */
+    private Response postDetail(Request r) throws Exception {
+        String menuId = r.param("menuId"), bbsId = r.param("bbsId"), nttId = r.param("nttId");
+        if (menuId == null || !menuId.matches("\\d+") || bbsId == null || !bbsId.matches("[A-Za-z0-9_]+") || nttId == null || !nttId.matches("\\d+")) {
+            throw new ApiException(400, "잘못된 게시물 요청");
+        }
+        boolean sen = "1".equals(r.param("sen"));
+        long tIn = System.currentTimeMillis();
+        java.io.File dir = new java.io.File(ctx.getFilesDir(), "posts");
+        java.io.File f = new java.io.File(dir, nttId + ".json");
+        String saved = Util.readFile(f);
+        if (saved != null && System.currentTimeMillis() - f.lastModified() < 6 * 3600_000L) return Response.json(saved);
+        // Ask the school server; if it has not answered in 2.5 s (a post it has not loaded yet can take
+        // it 15 s), fetch the post directly as well and use whichever arrives first.
+        final String q = "menuId=" + menuId + "&bbsId=" + bbsId + "&nttId=" + nttId + "&sen=" + (sen ? 1 : 0);
+        final String base0;
+        {
+            JSONObject hp = fetcher.get().optJSONObject("homepage");
+            String b0 = hp == null ? "" : hp.optString("base");
+            base0 = b0.isEmpty() ? SchoolHomepage.base(SchoolPreset.config().optJSONObject("school").optString("homepage")) : b0;
+        }
+        java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.ExecutorCompletionService<String[]> cs = new java.util.concurrent.ExecutorCompletionService<>(ex);
+        long t0 = System.currentTimeMillis();
+        cs.submit(() -> {
+            String b1 = Util.httpGet(sync.base() + "/api/homepage/detail?" + q, java.nio.charset.StandardCharsets.UTF_8, 20000);
+            new JSONObject(b1); // must be a post, not an error page
+            return new String[]{b1, "server"};
+        });
+        int pending = 1;
+        boolean directStarted = false;
+        String body = null, src = "";
+        Exception last = null;
+        try {
+            while (pending > 0 && body == null) {
+                long left = 22000 - (System.currentTimeMillis() - t0);
+                if (left <= 0) break;
+                java.util.concurrent.Future<String[]> fut = cs.poll(directStarted ? left : Math.min(left, 2500), java.util.concurrent.TimeUnit.MILLISECONDS);
+                if (fut == null) {
+                    if (!directStarted) {
+                        directStarted = true;
+                        pending++;
+                        cs.submit(() -> new String[]{SchoolHomepage.detail(base0, menuId, bbsId, nttId, sen).toString(), "direct"});
+                    }
+                    continue;
+                }
+                pending--;
+                try {
+                    String[] got = fut.get();
+                    body = got[0];
+                    src = got[1];
+                } catch (java.util.concurrent.ExecutionException e) {
+                    last = e.getCause() instanceof Exception ? (Exception) e.getCause() : e;
+                    if (!directStarted) {
+                        // server failed outright: go direct now
+                        directStarted = true;
+                        pending++;
+                        cs.submit(() -> new String[]{SchoolHomepage.detail(base0, menuId, bbsId, nttId, sen).toString(), "direct"});
+                    }
+                }
+            }
+        } finally {
+            ex.shutdownNow();
+        }
+        String trace = (System.currentTimeMillis() - t0) + "ms (prep " + (t0 - tIn) + "ms)" + (last == null ? "" : " " + last);
+        if (body == null) {
+            if (saved != null) return Response.json(saved);
+            throw new ApiException(502, "게시물을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." + (last == null ? "" : " (" + last.getMessage() + ")"));
+        }
+        try {
+            if (!dir.isDirectory()) dir.mkdirs();
+            Util.writeFileAtomic(f, body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            java.io.File[] all = dir.listFiles();
+            if (all != null && all.length > 200) {
+                java.util.Arrays.sort(all, (x, y) -> Long.compare(x.lastModified(), y.lastModified()));
+                for (int i = 0; i < all.length - 150; i++) all[i].delete();
+            }
+        } catch (Exception ignored) {
+        }
+        Response res = Response.json(body);
+        res.headers.put("X-Source", src + "; " + trace.replaceAll("[\r\n]", " "));
+        return res;
     }
 
     // ------------------------------------------------------------------ static
@@ -105,6 +195,12 @@ public class Router implements HttpServer.Handler {
                 cfg.update(Util.jo("cls", b.optString("cls"), "name", b.optString("name"), "setUp", true));
                 core.onDeviceConfigChanged(true);
                 return Response.ok();
+            }
+            case "home": {
+                if ("GET".equals(r.method)) return Response.json(cfg.home());
+                if (!r.isLocal()) throw new ApiException(403, "기기에서만 사용할 수 있습니다");
+                cfg.setHome(r.json());
+                return Response.json(cfg.home());
             }
             case "pin":
                 requirePin(r);
@@ -174,7 +270,7 @@ public class Router implements HttpServer.Handler {
             Util.put(out, "timetable", Util.jo("source", "neis", "fetchedAt", n.optLong("fetchedAt"), "times", new JSONArray(),
                     "weeks", new JSONArray().put(Util.jo("start", n.optJSONArray("dates") == null ? "" : n.optJSONArray("dates").optString(0), "dates", n.optJSONArray("dates"), "days", n.optJSONArray("days")))));
         }
-        for (String k : new String[]{"meals", "schedule", "weather", "feeds", "homepage", "errors"}) if (d.has(k)) Util.put(out, k, d.opt(k));
+        for (String k : new String[]{"meals", "schedule", "weather", "homepage", "events", "latest", "errors"}) if (d.has(k)) Util.put(out, k, d.opt(k));
         return out;
     }
 
@@ -256,7 +352,21 @@ public class Router implements HttpServer.Handler {
             }
             int size = 144;
             Bitmap bm;
-            if (d instanceof BitmapDrawable && ((BitmapDrawable) d).getBitmap() != null) {
+            if (d instanceof android.graphics.drawable.AdaptiveIconDrawable) {
+                // Same rounded-square shape as the school apps, whatever mask the system uses.
+                android.graphics.drawable.AdaptiveIconDrawable a = (android.graphics.drawable.AdaptiveIconDrawable) d;
+                bm = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+                Canvas cv = new Canvas(bm);
+                android.graphics.Path clip = new android.graphics.Path();
+                clip.addRoundRect(0, 0, size, size, size * 0.23f, size * 0.23f, android.graphics.Path.Direction.CW);
+                cv.clipPath(clip);
+                int o = size / 4; // adaptive layers are 1.5x the visible area
+                for (Drawable layer : new Drawable[]{a.getBackground(), a.getForeground()}) {
+                    if (layer == null) continue;
+                    layer.setBounds(-o, -o, size + o, size + o);
+                    layer.draw(cv);
+                }
+            } else if (d instanceof BitmapDrawable && ((BitmapDrawable) d).getBitmap() != null) {
                 bm = Bitmap.createScaledBitmap(((BitmapDrawable) d).getBitmap(), size, size, true);
             } else {
                 bm = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);

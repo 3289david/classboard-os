@@ -31,6 +31,10 @@ public class ServerApi {
         this.devices = devices;
         this.fetcher = fetcher;
         this.statusKey = statusKey;
+        // Load recent post details ahead of time so boards open them instantly.
+        Thread t = new Thread(this::prefetchLoop, "detail-prefetch");
+        t.setDaemon(true);
+        t.start();
         store.addListener(() -> {
             synchronized (revMonitor) {
                 revMonitor.notifyAll();
@@ -53,7 +57,7 @@ public class ServerApi {
             case "/api/state":
                 return state(r);
             case "/api/shared":
-                return Response.json(fetcher.shared());
+                return shared(r);
             case "/api/device/hello":
                 return hello(r);
             case "/api/homepage/detail":
@@ -126,7 +130,88 @@ public class ServerApi {
         return Response.json(Util.jo("deviceKey", key[0]));
     }
 
+    // ------------------------------------------------------------------ school-wide data
+
+    /**
+     * Whole-school data for boards plus what the server already worked out (merged calendar events).
+     * ?since=ver answers {same:true} when nothing changed, so a board's minute poll is a few bytes.
+     */
+    private Response shared(Request r) {
+        JSONObject o = fetcher.shared();
+        long ver = 0;
+        Iterator<String> it = o.keys();
+        while (it.hasNext()) {
+            JSONObject v = o.optJSONObject(it.next());
+            if (v != null) ver = ver * 31 + v.optLong("fetchedAt");
+        }
+        String v = Long.toHexString(ver);
+        if (v.equals(r.param("since"))) return Response.json(Util.jo("same", true, "ver", v));
+        JSONObject sched = o.optJSONObject("schedule");
+        Util.put(o, "events", Util.jo("fetchedAt", sched == null ? 0 : sched.optLong("fetchedAt"), "items", Derived.events(sched)));
+        Util.put(o, "latest", latestPosts(o.optJSONObject("homepage")));
+        Util.put(o, "ver", v);
+        return Response.json(o);
+    }
+
+    /** Newest posts across all boards (pinned notices older than 30 days left out), newest first. */
+    private static JSONArray latestPosts(JSONObject hp) {
+        java.util.List<JSONObject> all = new java.util.ArrayList<>();
+        String cutoff = java.time.LocalDate.now().minusDays(30).toString();
+        JSONArray boards = hp == null ? null : hp.optJSONArray("boards");
+        for (int i = 0; boards != null && i < boards.length(); i++) {
+            JSONObject b = boards.optJSONObject(i);
+            JSONArray items = b.optJSONArray("items");
+            for (int k = 0; items != null && k < items.length(); k++) {
+                JSONObject it = Util.copy(items.optJSONObject(k));
+                if (it.optBoolean("pinned") && it.optString("date").compareTo(cutoff) < 0) continue;
+                Util.put(it, "board", b.optString("name"));
+                Util.put(it, "menuId", b.optString("menuId"));
+                all.add(it);
+            }
+        }
+        all.sort((x, y) -> y.optString("date").compareTo(x.optString("date")));
+        return new JSONArray(all.subList(0, Math.min(30, all.size())));
+    }
+
     // ------------------------------------------------------------------ homepage posts
+
+    private static final long DETAIL_TTL = 6 * 3600_000L;
+
+    private void prefetchLoop() {
+        try {
+            Thread.sleep(20_000);
+        } catch (InterruptedException e) {
+            return;
+        }
+        while (true) {
+            try {
+                JSONObject hp = fetcher.get().optJSONObject("homepage");
+                String base = hp == null ? "" : hp.optString("base");
+                JSONArray boards = hp == null ? null : hp.optJSONArray("boards");
+                for (int i = 0; !base.isEmpty() && boards != null && i < boards.length(); i++) {
+                    JSONObject b = boards.optJSONObject(i);
+                    JSONArray items = b.optJSONArray("items");
+                    for (int k = 0; items != null && k < Math.min(10, items.length()); k++) {
+                        JSONObject p = items.optJSONObject(k);
+                        Object[] c = detailCache.get(p.optString("nttId"));
+                        if (c != null && now() - (Long) c[0] < DETAIL_TTL) continue;
+                        try {
+                            JSONObject d = SchoolHomepage.detail(base, b.optString("menuId"), p.optString("bbsId"), p.optString("nttId"), p.optBoolean("sen"));
+                            detailCache.put(p.optString("nttId"), new Object[]{now(), d});
+                        } catch (Exception e) {
+                            L.w("Api", "prefetch " + p.optString("nttId"), e);
+                        }
+                        Thread.sleep(400); // be gentle with the school homepage
+                    }
+                }
+                Thread.sleep(10 * 60_000L);
+            } catch (InterruptedException e) {
+                return;
+            } catch (Exception e) {
+                L.w("Api", "prefetch loop", e);
+            }
+        }
+    }
 
     private Response homepageDetail(Request r) throws Exception {
         JSONObject hp = fetcher.get().optJSONObject("homepage");
@@ -138,13 +223,15 @@ public class ServerApi {
         }
         boolean sen = "1".equals(r.param("sen"));
         Object[] cached = detailCache.get(nttId);
-        if (cached != null && now() - (Long) cached[0] < 30 * 60_000L) return Response.json(cached[1]);
+        if (cached != null && now() - (Long) cached[0] < DETAIL_TTL) return Response.json(cached[1]);
         try {
             JSONObject d = SchoolHomepage.detail(base, menuId, bbsId, nttId, sen);
-            if (detailCache.size() > 500) detailCache.clear();
+            if (detailCache.size() > 800) detailCache.clear();
             detailCache.put(nttId, new Object[]{now(), d});
             return Response.json(d);
         } catch (java.io.IOException e) {
+            // keep serving an older copy rather than failing
+            if (cached != null) return Response.json(cached[1]);
             throw new ApiException(502, "학교 홈페이지에 연결할 수 없습니다: " + e.getMessage());
         }
     }

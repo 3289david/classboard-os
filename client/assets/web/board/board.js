@@ -99,9 +99,26 @@
     for (;;) {
       try { S.device = await C.get('/api/local/device', pinHeaders()); break; } catch (e) { await sleep(800); }
     }
+    applyLite();
     if (!S.device.setUp) { bootDone(); setupWizard(); return; }
     bootStatus('학교 데이터 불러오는 중');
     start();
+  }
+
+  // Low-end boards: no animations, shadows or blur. Auto-detected, can be forced in 설정 → 홈 화면.
+  function perfInfo() {
+    if (!N || !N.perf) return null;
+    try { return JSON.parse(N.perf()); } catch (e) { return null; }
+  }
+  function liteAuto() {
+    const p = perfInfo();
+    return !!p && (p.lowRam || p.memClass < 256 || p.cores <= 4);
+  }
+  function applyLite() {
+    const mode = (S.device && S.device.home && S.device.home.lite) || 'auto';
+    const on = mode === 'on' || (mode === 'auto' && liteAuto());
+    document.documentElement.classList.toggle('lite', on);
+    S.lite = on;
   }
 
   function start() {
@@ -109,6 +126,9 @@
     S.booted = true;
     renderNavKeys();
     renderDock();
+    renderAppPages();
+    initPages();
+    $('#g-search').onclick = (ev) => openApp('browser', ev.currentTarget);
     stateLoop();
     loadData();
     pollSys();
@@ -271,11 +291,17 @@
     const want = S.manualView || autoView();
     if (want !== S.view || changed) setView(want);
     if (changed && force !== true) { renderHome(); renderLesson(); renderBreak(); }
-    renderNowCard();
-    renderWidgets();
-    renderTimer();
-    renderLessonProgress();
-    renderBreakHero();
+    // Low-end boards: only the countdowns change every second; everything else once a minute.
+    const minute = Math.floor(C.nowMin());
+    if (force === true || changed || minute !== S.lastMinute) {
+      S.lastMinute = minute;
+      renderNowCard();
+      renderWidgets();
+      renderLessonProgress();
+      if (S.view === 'home') renderTimetable();
+    }
+    if (S.view === 'lesson') renderTimer();
+    if (S.view === 'break') renderBreakHero();
   }
 
   // ---------------------------------------------------------------- home
@@ -428,6 +454,7 @@
     }));
   }
   function homepageLatest(n) {
+    if (S.data && S.data.latest && S.data.latest.length) return S.data.latest.slice(0, n);
     const cutoff = C.addDays(C.today(), -30);
     const all = [];
     homepageBoards().forEach((b) => (b.items || []).forEach((it) => {
@@ -493,7 +520,9 @@
         d.images.map((src) => '<img src="' + esc(src) + '" alt="" style="max-width:100%;margin-top:1rem;border-radius:.8rem;background:#fff">').join('') + '</div>';
       C.$$('[data-f]', body).forEach((b) => { b.onclick = () => { const f = d.files[Number(b.dataset.f)]; toast('"' + f.name + '" 여는 중...'); native('openWebFile', f.url, f.name); }; });
     } catch (e) {
-      body.innerHTML = '<div class="empty">' + ic('alert') + esc(e.message) + '</div>';
+      if (S.panel !== 'post' || S.panelOpts !== o) return;
+      body.innerHTML = '<div class="empty" style="flex-direction:column;align-items:flex-start;gap:1rem">' + esc(e.message) + '<button class="btn pri" id="hp-retry">' + ic('refresh') + '다시 시도</button></div>';
+      $('#hp-retry').onclick = () => renderPostApp();
     }
   }
   function fileIcon(name) {
@@ -551,16 +580,22 @@
   }
 
   // exams & schedule
-  function examItems() {
+  // calendar events merged and classified by the school server; computed here only for old cached data
+  function allEvents() {
+    const ev = S.data && S.data.events && S.data.events.items;
+    if (!ev) return C.events(S.data, S.state, grade());
     const g = grade();
+    return ev.filter((e) => !g || !e.grades || !e.grades.length || e.grades.indexOf(g) >= 0);
+  }
+  function examItems() {
     const out = [];
-    C.events(S.data, S.state, g).forEach((e) => { if (e.kind === '시험' && (e.endDate || e.date) >= C.today()) out.push({ date: e.date, endDate: e.endDate, name: e.name }); });
+    allEvents().forEach((e) => { if (e.kind === '시험' && (e.endDate || e.date) >= C.today()) out.push({ date: e.date, endDate: e.endDate, name: e.name }); });
     const seen = {};
     return out.filter((x) => { const k = x.date + x.name; if (seen[k]) return false; seen[k] = true; return true; });
   }
   function examDday(e) { return e.date < C.today() ? '진행 중' : C.dday(e.date); }
   function upcomingEvents() {
-    return C.events(S.data, S.state, grade()).filter((e) => (e.endDate || e.date) >= C.today() && e.kind !== '시험');
+    return allEvents().filter((e) => (e.endDate || e.date) >= C.today() && e.kind !== '시험');
   }
   function mini(el, icon, head, value, sub, red) {
     const h = '<span class="h">' + ic(icon) + esc(head) + '</span><span class="v' + (red ? ' red' : '') + '">' + value + '</span><span class="d">' + sub + '</span>';
@@ -710,48 +745,131 @@
 
   // ---------------------------------------------------------------- apps
   const APPS = {
-    lesson: { name: '수업', icon: 'book', c: '#5b8cff', open: () => { closePanel(); S.manualView = 'lesson'; setView('lesson'); } },
-    timetable: { name: '시간표', icon: 'clock', c: '#7d7bff', render: renderTimetableApp },
-    meal: { name: '급식', icon: 'meal', c: '#ff9f2e', render: renderMealApp },
-    notices: { name: '가정통신문', icon: 'file', c: '#22b8b8', render: renderNoticesApp },
-    post: { name: '가정통신문', icon: 'file', c: '#22b8b8', render: renderPostApp, hidden: true },
-    calendar: { name: '학사일정', icon: 'calendar', c: '#ff5a52', render: renderCalendarApp },
-    weather: { name: '날씨', icon: 'wSun', c: '#f5a524', render: renderWeatherApp },
-    memo: { name: '화면 메모', icon: 'pen', c: '#2fb87a', open: () => native('memo') },
-    capture: { name: '화면 캡처', icon: 'camera', c: '#64748b', open: () => native('capture', false) },
-    record: { name: '화면 녹화', icon: 'rec', c: '#e5484d', open: () => { native('capture', true); setTimeout(pollSys, 1500); } },
-    split: { name: '화면 분할', icon: 'split', c: '#a26bf5', render: () => renderAndroidApps(true) },
-    files: { name: '파일 · USB', icon: 'usb', c: '#3b82f6', render: renderFiles },
-    room: { name: '교실 정보', icon: 'door', c: '#14a3a3', render: renderRoom },
-    drawer: { name: '모든 앱', icon: 'apps', c: '#475569', render: renderDrawer },
-    settings: { name: '설정', icon: 'settings', c: '#5b6474', render: renderSettings },
+    lesson: { name: '수업', open: () => { closePanel(); S.manualView = 'lesson'; setView('lesson'); } },
+    timetable: { name: '시간표', render: renderTimetableApp },
+    meal: { name: '급식', render: renderMealApp },
+    notices: { name: '가정통신문', render: renderNoticesApp },
+    post: { name: '가정통신문', icon: 'notices', render: renderPostApp, hidden: true },
+    calendar: { name: '학사일정', render: renderCalendarApp },
+    weather: { name: '날씨', render: renderWeatherApp },
+    board: { name: '칠판', render: renderBoardApp, full: true },
+    memo: { name: '화면 메모', open: () => native('memo') },
+    browser: { name: '인터넷', open: openSearch },
+    capture: { name: '화면 캡처', open: () => native('capture', false) },
+    record: { name: '화면 녹화', open: () => { native('capture', true); setTimeout(pollSys, 1500); } },
+    split: { name: '화면 분할', render: () => renderAndroidApps(true) },
+    files: { name: '파일', render: renderFiles },
+    room: { name: '교실 정보', render: renderRoom },
+    drawer: { name: '모든 앱', render: renderDrawer, hidden: true },
+    settings: { name: '설정', render: renderSettings },
   };
-  const DOCK = ['timetable', 'meal', 'notices', 'memo', 'settings'];
+  const DEFAULT_DOCK = ['timetable', 'meal', 'notices', 'board', 'browser'];
   const PER_PAGE = 16;
+  let androidApps = null;
 
-  function appIcon(id, small) {
-    const a = APPS[id];
-    return '<button class="appicon' + (small ? ' small' : '') + '" data-app="' + id + '" style="--c:' + a.c + '"><span class="tile">' + ic(a.icon) + '</span><span>' + esc(a.name) + '</span></button>';
+  function listAndroidApps() {
+    if (androidApps) return androidApps;
+    androidApps = [];
+    if (N) { try { androidApps = JSON.parse(N.apps()); } catch (e) { androidApps = []; } }
+    return androidApps;
   }
-  function bindApps(root) { C.$$('[data-app]', root).forEach((b) => { b.onclick = (ev) => openApp(b.dataset.app, ev.currentTarget); }); }
+  function svgFor(id) { return window.appIconSvg((APPS[id] && APPS[id].icon) || id); }
+  function appLabel(id) {
+    if (id.indexOf('pkg:') === 0) { const a = listAndroidApps().find((x) => x.pkg === id.slice(4)); return a ? a.label : id.slice(4); }
+    return APPS[id] ? APPS[id].name : id;
+  }
+  function tileFor(id) {
+    if (id.indexOf('pkg:') === 0) return '<span class="tile"><img src="/api/local/icon?pkg=' + encodeURIComponent(id.slice(4)) + '" alt="" loading="lazy"></span>';
+    return '<span class="tile">' + svgFor(id) + '</span>';
+  }
+  function appIcon(id, small) {
+    const key = id.indexOf('pkg:') === 0 ? 'data-pkg="' + esc(id.slice(4)) + '"' : 'data-app="' + id + '"';
+    return '<button class="appicon' + (small ? ' small' : '') + '" ' + key + '>' + tileFor(id) + '<span class="lb">' + esc(appLabel(id)) + '</span></button>';
+  }
+  function bindApps(root) {
+    C.$$('[data-app]', root).forEach((b) => { b.onclick = (ev) => { if (b._long) { b._long = false; return; } openApp(b.dataset.app, ev.currentTarget); }; longPress(b, 'app:' + b.dataset.app); });
+    C.$$('[data-pkg]', root).forEach((b) => {
+      b.onclick = () => { if (b._long) { b._long = false; return; } const r = native('launch', b.dataset.pkg); if (r && !r.error) rememberAndroid(b.dataset.pkg); };
+      longPress(b, 'pkg:' + b.dataset.pkg);
+    });
+  }
+  function dockIds() {
+    const d = S.device && S.device.home && S.device.home.dock;
+    return (d && d.length ? d : DEFAULT_DOCK).filter((id) => id.indexOf('pkg:') === 0 || (APPS[id] && !APPS[id].hidden));
+  }
   function renderDock() {
     const d = $('#dock');
-    d.innerHTML = DOCK.map((id) => appIcon(id)).join('');
+    d.innerHTML = dockIds().map((id) => appIcon(id)).join('');
     bindApps(d);
-    renderAppPages();
-    initPages();
   }
+  async function saveHome(patch) {
+    try {
+      const h = await localPost('/api/local/home', patch);
+      S.device.home = h;
+      renderDock();
+      return true;
+    } catch (e) { toast(e.message); return false; }
+  }
+  function toggleDock(id) {
+    const cur = dockIds().slice();
+    const i = cur.indexOf(id);
+    if (i >= 0) cur.splice(i, 1);
+    else if (cur.length >= 6) { toast('하단에는 앱을 6개까지 둘 수 있습니다'); return; }
+    else cur.push(id);
+    saveHome({ dock: cur }).then((ok) => { if (ok) toast(i >= 0 ? '하단에서 뺐습니다' : '하단에 추가했습니다', 1800); });
+  }
+
+  // long press on an icon: a small menu like an Android launcher
+  function longPress(el, id) {
+    let t = null, sx = 0, sy = 0;
+    el.addEventListener('pointerdown', (e) => {
+      sx = e.clientX; sy = e.clientY;
+      clearTimeout(t);
+      t = setTimeout(() => { el._long = true; iconMenu(el, id.replace(/^app:/, '')); }, 550);
+    });
+    el.addEventListener('pointermove', (e) => { if (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10) clearTimeout(t); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((n) => el.addEventListener(n, () => clearTimeout(t)));
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+  function iconMenu(el, id) {
+    const m = $('#ctx');
+    const inDock = dockIds().indexOf(id) >= 0;
+    m.innerHTML = '<div class="ctx-h">' + tileFor(id) + '<b>' + esc(appLabel(id)) + '</b></div>' +
+      '<button data-c="open">열기</button><button data-c="dock">' + (inDock ? '하단에서 빼기' : '하단에 추가') + '</button>' +
+      (id.indexOf('pkg:') === 0 ? '<button data-c="info">앱 정보</button>' : '');
+    m.classList.add('on');
+    // place next to the icon, kept inside the screen using the menu's real size
+    const r = el.getBoundingClientRect(), pr = $('#app').getBoundingClientRect();
+    const mw = m.offsetWidth, mh = m.offsetHeight;
+    m.style.left = Math.min(pr.width - mw - 12, Math.max(12, r.left - pr.left + r.width / 2 - mw / 2)) + 'px';
+    const below = r.bottom - pr.top + mh + 12 < pr.height;
+    m.style.top = (below ? r.bottom - pr.top + 8 : Math.max(12, r.top - pr.top - mh - 8)) + 'px';
+    m.style.bottom = '';
+    C.$$('[data-c]', m).forEach((b) => {
+      b.onclick = () => {
+        m.classList.remove('on');
+        if (b.dataset.c === 'dock') toggleDock(id);
+        else if (b.dataset.c === 'info') native('open', 'appInfo:' + id.slice(4));
+        else if (id.indexOf('pkg:') === 0) native('launch', id.slice(4));
+        else openApp(id, el);
+      };
+    });
+    setTimeout(() => document.addEventListener('pointerdown', function off(e) {
+      if (!m.contains(e.target)) { m.classList.remove('on'); document.removeEventListener('pointerdown', off, true); }
+    }, true), 0);
+  }
+
+  // search: opens the browser on the chosen search engine
+  const ENGINES = { naver: ['네이버', 'https://m.naver.com/'], google: ['Google', 'https://www.google.com/'], daum: ['다음', 'https://m.daum.net/'] };
+  function engine() { return ENGINES[(S.device && S.device.home && S.device.home.search) || 'naver'] || ENGINES.naver; }
+  function openSearch() { closeRecents(); native('openUrl', engine()[1]); }
 
   // apps continue sideways as launcher pages: school apps first, then installed Android apps
   function renderAppPages() {
     const pages = $('#pages');
     C.$$('.pg-apps', pages).forEach((p) => p.remove());
-    const items = Object.keys(APPS).filter((id) => !APPS[id].hidden && id !== 'drawer').map((id) => appIcon(id));
-    let apps = [];
-    if (N) { try { apps = JSON.parse(N.apps()); } catch (e) { apps = []; } }
-    apps.forEach((a) => {
-      items.push('<button class="appicon" data-pkg="' + esc(a.pkg) + '"><img src="/api/local/icon?pkg=' + encodeURIComponent(a.pkg) + '" alt="" loading="lazy"><span>' + esc(a.label) + '</span></button>');
-    });
+    const items = Object.keys(APPS).filter((id) => !APPS[id].hidden).map((id) => appIcon(id));
+    listAndroidApps().forEach((a) => { items.push(appIcon('pkg:' + a.pkg)); });
     for (let i = 0; i < items.length; i += PER_PAGE) {
       const k = i / PER_PAGE;
       const pg = document.createElement('div');
@@ -761,9 +879,6 @@
       C.$$('[data-w]', pg).forEach((b) => { b.onclick = (ev) => openWidget(b.dataset.w, ev.currentTarget); });
       pages.appendChild(pg);
       bindApps(pg);
-      C.$$('[data-pkg]', pg).forEach((b) => {
-        b.onclick = () => { const r = native('launch', b.dataset.pkg); if (r && !r.error) rememberAndroid(b.dataset.pkg); };
-      });
     }
     renderDots();
     renderWidgets();
@@ -890,8 +1005,8 @@
     const wasOpen = !!S.panel;
     S.panel = name;
     S.panelOpts = opts || {};
-    $('#p-icon').style.setProperty('--c', a.c);
-    $('#p-icon').innerHTML = ic(a.icon);
+    $('#p-icon').innerHTML = svgFor(name);
+    p.classList.toggle('full', !!a.full);
     $('#p-title').textContent = a.name;
     $('#p-tools').innerHTML = '';
     p.classList.remove('closing');
@@ -927,7 +1042,7 @@
   // drawer: built-in apps + installed Android apps
   function renderDrawer() {
     const body = $('#p-body');
-    const own = Object.keys(APPS).filter((id) => !APPS[id].hidden && id !== 'drawer');
+    const own = Object.keys(APPS).filter((id) => !APPS[id].hidden);
     body.innerHTML = '<div><div class="section-t">' + ic('school') + '중동중학교</div><div class="app-grid">' + own.map((id) => appIcon(id, true)).join('') + '</div>' +
       '<div class="section-t">' + ic('apps') + '설치된 앱</div><div id="android-apps"></div></div>';
     bindApps(body);
@@ -975,7 +1090,7 @@
         return '<button class="rc" data-rpkg="' + esc(pkg) + '"><img class="app-img" src="/api/local/icon?pkg=' + encodeURIComponent(pkg) + '" alt=""><b>앱</b></button>';
       }
       const a = APPS[id];
-      return '<button class="rc" data-rapp="' + id + '"><span class="appicon" style="--c:' + a.c + '"><span class="tile" style="width:6.4rem;height:6.4rem">' + ic(a.icon) + '</span></span><b>' + esc(a.name) + '</b></button>';
+      return '<button class="rc" data-rapp="' + id + '">' + tileFor(id) + '<b>' + esc(a.name) + '</b></button>';
     }).join('');
     if (!cards) cards = '<div class="empty" style="color:#a9b4c3">최근에 연 앱이 없습니다</div>';
     el.innerHTML = '<h2>최근 앱</h2><div class="cards">' + cards + '</div>' + (N ? '<button class="btn" id="rc-sys">' + ic('apps') + '안드로이드 최근 앱</button>' : '');
@@ -1101,6 +1216,7 @@
 
   // ---------------------------------------------------------------- settings app
   const SECTIONS = [
+    { id: 'home', name: '홈 화면', icon: 'apps', c: '#f08c2e' },
     { id: 'display', name: '화면', icon: 'sun', c: '#3b82f6' },
     { id: 'sound', name: '소리', icon: 'volume', c: '#e5484d' },
     { id: 'network', name: '네트워크 · 서버', icon: 'wifi', c: '#14a3a3' },
@@ -1126,7 +1242,7 @@
     const c = $('#set-c');
     if (sec.lock && !unlocked()) { pinPad(c, sec.name, () => renderSettings()); return; }
     if (unlocked()) S.pinUntil = Date.now() + 5 * 60 * 1000;
-    const R = { display: setDisplay, sound: setSound, network: setNetwork, bluetooth: setBluetooth, storage: setStorage, alerts: setAlerts, classroom: setClassroom, automation: setAutomation, permissions: setPermissions, about: setAbout }[sec.id];
+    const R = { home: setHomeScreen, display: setDisplay, sound: setSound, network: setNetwork, bluetooth: setBluetooth, storage: setStorage, alerts: setAlerts, classroom: setClassroom, automation: setAutomation, permissions: setPermissions, about: setAbout }[sec.id];
     R(c);
   }
   function refreshSettingsLive() {
@@ -1142,6 +1258,143 @@
     try { await localPost('/api/local/settings', next); S.device = await C.get('/api/local/device', pinHeaders()); toast('저장했습니다', 1800); } catch (e) { toast(e.message); }
   }
   function setOpen(c) { C.$$('[data-open]', c).forEach((b) => { b.onclick = () => native('open', b.dataset.open); }); }
+
+  function setHomeScreen(c) {
+    const dock = dockIds();
+    const all = Object.keys(APPS).filter((id) => !APPS[id].hidden).concat(listAndroidApps().map((a) => 'pkg:' + a.pkg));
+    const h = (S.device && S.device.home) || {};
+    const p = perfInfo();
+    c.innerHTML = '<h1>홈 화면</h1>' +
+      group('하단 앱 (' + dock.length + '/6)', dock.map((id, i) => '<div class="set-row dock-row">' + tileFor(id) + '<div class="lb"><b>' + esc(appLabel(id)) + '</b></div>' +
+        '<button class="btn sm" data-mv="' + i + ':-1"' + (i === 0 ? ' disabled' : '') + '>' + ic('left') + '</button><button class="btn sm" data-mv="' + i + ':1"' + (i === dock.length - 1 ? ' disabled' : '') + '>' + ic('right') + '</button>' +
+        '<button class="btn sm" data-rm="' + i + '">빼기</button></div>').join('') +
+        '<div class="set-row" style="display:block"><div class="lb" style="margin-bottom:.8rem"><b>추가할 앱</b><span>누르면 하단에 들어갑니다. 홈 화면에서 아이콘을 길게 눌러도 됩니다.</span></div><div class="pick-grid">' +
+        all.filter((id) => dock.indexOf(id) < 0).map((id) => '<button class="pick" data-add="' + esc(id) + '">' + tileFor(id) + '<span>' + esc(appLabel(id)) + '</span></button>').join('') + '</div></div>' +
+        row('기본값으로', '시간표, 급식, 가정통신문, 칠판, 인터넷', '<button class="btn sm" id="dock-reset">되돌리기</button>')) +
+      group('검색', row('검색 엔진', '홈 화면 검색창과 인터넷 앱', '<div class="tabs">' + Object.keys(ENGINES).map((k) => '<button data-eng="' + k + '" class="' + ((h.search || 'naver') === k ? 'on' : '') + '">' + ENGINES[k][0] + '</button>').join('') + '</div>')) +
+      group('성능', row('저사양 모드', '애니메이션과 그림자를 끄고 화면을 덜 자주 다시 그립니다' + (p ? ' · 이 기기: 메모리 ' + Math.round(p.totalMem / 1073741824 * 10) / 10 + 'GB, 코어 ' + p.cores + '개' : ''),
+        '<div class="tabs">' + [['auto', '자동' + (liteAuto() ? '(켜짐)' : '(꺼짐)')], ['on', '켜기'], ['off', '끄기']].map((x) => '<button data-lite="' + x[0] + '" class="' + ((h.lite || 'auto') === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>'));
+    const set = (next) => saveHome({ dock: next }).then(() => renderSettings());
+    C.$$('[data-mv]', c).forEach((b) => { b.onclick = () => { const [i, d] = b.dataset.mv.split(':').map(Number); const n = dock.slice(); const t = n[i]; n[i] = n[i + d]; n[i + d] = t; set(n); }; });
+    C.$$('[data-rm]', c).forEach((b) => { b.onclick = () => { const n = dock.slice(); n.splice(Number(b.dataset.rm), 1); set(n); }; });
+    C.$$('[data-add]', c).forEach((b) => { b.onclick = () => { if (dock.length >= 6) { toast('하단에는 앱을 6개까지 둘 수 있습니다'); return; } set(dock.concat([b.dataset.add])); }; });
+    $('#dock-reset').onclick = () => set(DEFAULT_DOCK.slice());
+    C.$$('[data-eng]', c).forEach((b) => { b.onclick = () => saveHome({ search: b.dataset.eng }).then(() => renderSettings()); });
+    C.$$('[data-lite]', c).forEach((b) => { b.onclick = () => saveHome({ lite: b.dataset.lite }).then(() => { applyLite(); renderSettings(); }); });
+  }
+
+  // ---------------------------------------------------------------- 칠판 (blackboard)
+  const BB_BG = {
+    green: { name: '칠판', fill: '#264c3a', ink: ['#f7f7f2', '#ffe066', '#ff9fb2', '#8fd0ff', '#b6e36b'] },
+    black: { name: '흑판', fill: '#1d2024', ink: ['#f7f7f2', '#ffe066', '#ff9fb2', '#8fd0ff', '#b6e36b'] },
+    white: { name: '화이트보드', fill: '#fbfbf8', ink: ['#1f2328', '#2f6ae0', '#e0413a', '#1f9d5b', '#8a4fe0'] },
+  };
+  const BB = { bg: 'green', grid: false, pages: [[]], page: 0, color: 0, size: 1, eraser: false };
+  function renderBoardApp() {
+    const body = $('#p-body');
+    const bg = BB_BG[BB.bg];
+    body.innerHTML = '<div class="bb bb-' + BB.bg + (BB.grid ? ' grid' : '') + '"><canvas id="bb-c"></canvas>' +
+      '<div class="bb-bar">' +
+      bg.ink.map((c, i) => '<button class="bb-ink' + (!BB.eraser && BB.color === i ? ' on' : '') + '" data-ink="' + i + '" style="--ink:' + c + '"></button>').join('') +
+      '<i class="bb-sep"></i>' +
+      [0, 1, 2].map((s) => '<button class="bb-size' + (BB.size === s ? ' on' : '') + '" data-size="' + s + '"><i style="width:' + [0.5, 0.9, 1.4][s] + 'rem;height:' + [0.5, 0.9, 1.4][s] + 'rem"></i></button>').join('') +
+      '<button class="bb-t' + (BB.eraser ? ' on' : '') + '" data-t="eraser">지우개</button><button class="bb-t" data-t="undo">되돌리기</button><button class="bb-t" data-t="clear">모두 지우기</button>' +
+      '<i class="bb-sep"></i>' +
+      '<button class="bb-t" data-t="bg">' + bg.name + '</button><button class="bb-t' + (BB.grid ? ' on' : '') + '" data-t="grid">모눈</button>' +
+      '<i class="bb-sep"></i>' +
+      '<button class="bb-t" data-t="prev"' + (BB.page === 0 ? ' disabled' : '') + '>' + ic('left') + '</button><span class="bb-pg">' + (BB.page + 1) + ' / ' + BB.pages.length + '</span>' +
+      '<button class="bb-t" data-t="next">' + (BB.page === BB.pages.length - 1 ? ic('plus') : ic('right')) + '</button>' +
+      '<button class="bb-t" data-t="save">저장</button><button class="bb-t" data-t="close">' + ic('x') + '</button></div></div>';
+    const cv = $('#bb-c');
+    const ctx = cv.getContext('2d', { desynchronized: true });
+    const dpr = S.lite ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
+    const fit = () => {
+      const r = cv.getBoundingClientRect();
+      cv.width = Math.round(r.width * dpr);
+      cv.height = Math.round(r.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      redraw();
+    };
+    const widths = () => [3, 6, 12][BB.size];
+    const styleFor = (st) => {
+      ctx.globalCompositeOperation = st.erase ? 'destination-out' : 'source-over';
+      ctx.strokeStyle = st.c;
+      ctx.lineWidth = st.erase ? st.w * 6 : st.w;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = 1;
+    };
+    const drawStroke = (st, from) => {
+      const p = st.pts;
+      styleFor(st);
+      ctx.beginPath();
+      const i0 = Math.max(0, (from || 0) - 2);
+      ctx.moveTo(p[i0], p[i0 + 1]);
+      if (p.length === 2) ctx.lineTo(p[0] + 0.1, p[1] + 0.1);
+      for (let i = i0 + 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]);
+      ctx.stroke();
+    };
+    function redraw() {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx.restore();
+      BB.pages[BB.page].forEach((st) => drawStroke(st, 0));
+    }
+    const live = {};
+    cv.addEventListener('pointerdown', (e) => {
+      cv.setPointerCapture(e.pointerId);
+      const r = cv.getBoundingClientRect();
+      const st = { c: bg.ink[BB.color], w: widths(), erase: BB.eraser, pts: [e.clientX - r.left, e.clientY - r.top] };
+      live[e.pointerId] = st;
+      BB.pages[BB.page].push(st);
+      drawStroke(st, 0);
+    });
+    cv.addEventListener('pointermove', (e) => {
+      const st = live[e.pointerId];
+      if (!st) return;
+      const r = cv.getBoundingClientRect();
+      const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      const from = st.pts.length;
+      (evs.length ? evs : [e]).forEach((x) => { st.pts.push(x.clientX - r.left, x.clientY - r.top); });
+      drawStroke(st, from);
+    });
+    const end = (e) => { delete live[e.pointerId]; };
+    cv.addEventListener('pointerup', end);
+    cv.addEventListener('pointercancel', end);
+    C.$$('[data-ink]', body).forEach((b) => { b.onclick = () => { BB.color = Number(b.dataset.ink); BB.eraser = false; renderBoardApp(); }; });
+    C.$$('[data-size]', body).forEach((b) => { b.onclick = () => { BB.size = Number(b.dataset.size); renderBoardApp(); }; });
+    C.$$('[data-t]', body).forEach((b) => {
+      b.onclick = () => {
+        const t = b.dataset.t, pg = BB.pages[BB.page];
+        if (t === 'eraser') BB.eraser = !BB.eraser;
+        else if (t === 'undo') { pg.pop(); redraw(); return; }
+        else if (t === 'clear') { if (!pg.length) return; pg.length = 0; redraw(); return; }
+        else if (t === 'bg') { const k = Object.keys(BB_BG); BB.bg = k[(k.indexOf(BB.bg) + 1) % k.length]; BB.color = 0; }
+        else if (t === 'grid') BB.grid = !BB.grid;
+        else if (t === 'prev') BB.page = Math.max(0, BB.page - 1);
+        else if (t === 'next') { if (BB.page === BB.pages.length - 1) BB.pages.push([]); BB.page++; }
+        else if (t === 'save') { saveBoard(cv); return; }
+        else if (t === 'close') { closePanel(); return; }
+        renderBoardApp();
+      };
+    });
+    requestAnimationFrame(fit);
+    setTimeout(fit, 60);
+  }
+  function saveBoard(cv) {
+    const out = document.createElement('canvas');
+    out.width = cv.width;
+    out.height = cv.height;
+    const x = out.getContext('2d');
+    x.fillStyle = BB_BG[BB.bg].fill;
+    x.fillRect(0, 0, out.width, out.height);
+    x.drawImage(cv, 0, 0);
+    const d = new Date();
+    const name = 'board_' + C.today().replace(/-/g, '') + '_' + C.pad(d.getHours()) + C.pad(d.getMinutes()) + C.pad(d.getSeconds());
+    const r = native('saveImage', out.toDataURL('image/png'), name);
+    if (r && r.ok) toast('칠판을 저장했습니다: ' + r.where);
+  }
 
   function setDisplay(c) {
     const br = (S.sys && S.sys.brightness) || {};
