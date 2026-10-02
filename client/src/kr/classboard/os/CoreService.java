@@ -85,6 +85,7 @@ public class CoreService extends Service {
         fetcher.setOnChange(() -> MainActivity.notifyWeb("data", "{}"));
         exec.scheduleWithFixedDelay(() -> refreshData(false), 3, 60, TimeUnit.SECONDS);
         exec.scheduleWithFixedDelay(this::tick, 5, 10, TimeUnit.SECONDS);
+        exec.scheduleWithFixedDelay(this::preClassTick, 7, 1, TimeUnit.SECONDS);
         // USB drive plugged in or pulled out: the files app shows it right away
         android.content.IntentFilter media = new android.content.IntentFilter();
         media.addAction(Intent.ACTION_MEDIA_MOUNTED);
@@ -317,7 +318,9 @@ public class CoreService extends Service {
                 }
                 seg = "after";
             }
-            preClassNotice(slots, periodsToday, now);
+            todaySlots = slots;
+            todayPeriods = periodsToday;
+            todayDate = Util.today();
             if (!seg.equals(lastSegment)) {
                 String prev = lastSegment;
                 lastSegment = seg;
@@ -332,25 +335,36 @@ public class CoreService extends Service {
     }
 
     private String lastNotice = "";
+    private volatile List<Periods.Slot> todaySlots;
+    private volatile int todayPeriods = -1;
+    private volatile String todayDate = "";
 
-    /** "곧 N교시 시작" a few minutes before each class (설정 → 홈 화면 → 수업 시작 전 알림). */
-    private void preClassNotice(List<Periods.Slot> slots, int periodsToday, int now) {
-        JSONObject home = cfg.home();
-        if (!home.optBoolean("preClass", true)) return;
-        int before = Math.max(1, Math.min(10, home.optInt("preClassMin", 2)));
-        for (Periods.Slot s : slots) {
-            if (periodsToday > 0 && s.period > periodsToday) break;
-            if (now == s.start - before) {
-                String key = Util.today() + "/" + s.period;
-                if (key.equals(lastNotice)) return;
-                lastNotice = key;
-                String subject = subjectAt(s.period);
-                if (home.optBoolean("preClassSound", true)) Chime.play("soft");
-                overlays.showClassAlert(before + "분 뒤 " + s.period + "교시" + (subject.isEmpty() ? "" : " " + subject),
-                        "자리에 앉아 수업을 준비해 주세요", 0xFF2F6BEA, 12, false);
-                MainActivity.notifyWeb("preclass", Util.jo("period", s.period, "minutes", before, "subject", subject).toString());
-                return;
+    /** "곧 N교시 시작" 10 seconds before each class (설정 → 홈 화면 → 수업 시작 전 알림). Runs every second, no heavy work. */
+    private void preClassTick() {
+        try {
+            List<Periods.Slot> slots = todaySlots;
+            if (slots == null || !Util.today().equals(todayDate)) return;
+            JSONObject home = cfg.home();
+            if (!home.optBoolean("preClass", true)) return;
+            java.util.Calendar c = java.util.Calendar.getInstance(Util.KST);
+            int nowSec = c.get(java.util.Calendar.HOUR_OF_DAY) * 3600 + c.get(java.util.Calendar.MINUTE) * 60 + c.get(java.util.Calendar.SECOND);
+            for (Periods.Slot s : slots) {
+                if (todayPeriods > 0 && s.period > todayPeriods) break;
+                int left = s.start * 60 - nowSec;
+                if (left > 0 && left <= 10) {
+                    String key = todayDate + "/" + s.period;
+                    if (key.equals(lastNotice)) return;
+                    lastNotice = key;
+                    String subject = subjectAt(s.period);
+                    if (home.optBoolean("preClassSound", true)) Chime.play("soft");
+                    overlays.showClassAlert(s.period + "교시" + (subject.isEmpty() ? "" : " " + subject) + " 곧 시작합니다",
+                            "자리에 앉아 수업을 준비해 주세요", 0xFF2F6BEA, Math.max(3, left), false);
+                    MainActivity.notifyWeb("preclass", Util.jo("period", s.period, "seconds", left, "subject", subject).toString());
+                    return;
+                }
             }
+        } catch (Exception e) {
+            Log.w(TAG, "preclass", e);
         }
     }
 
@@ -382,11 +396,10 @@ public class CoreService extends Service {
 
     private long lastClassAlert;
 
-    /** Class alerts from the quick panel or the board: not during lessons, not twice within the wait time. */
+    /** Class alerts from the quick panel or the board: not twice within the wait time. */
     public String fireClassAlert(String type) {
         JSONObject st = cfg.settings();
         if (!st.optBoolean("classAlerts", true)) return "학급 알림이 꺼져 있습니다 (설정 → 학급 알림)";
-        if (inClass()) return "수업 중에는 학급 알림을 보낼 수 없습니다";
         long cool = st.optInt("alertCooldown", 10) * 1000L;
         long left = cool - (System.currentTimeMillis() - lastClassAlert);
         if (left > 0) return ((left + 999) / 1000) + "초 후에 다시 보낼 수 있습니다";

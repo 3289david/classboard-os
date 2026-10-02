@@ -1175,7 +1175,6 @@
   ];
   function fireClassAlert(a) {
     if (N && N.classAlert && a.type) { native('classAlert', a.type); return; }
-    if (S.seg.type === 'class') { toast('수업 중에는 학급 알림을 보낼 수 없습니다'); return; }
     const st = settings();
     if (st.classAlerts === false) { toast('설정에서 학급 알림이 꺼져 있습니다'); return; }
     const cool = (st.alertCooldown || 10) * 1000;
@@ -1468,8 +1467,7 @@
         '<div class="set-row" style="display:block"><div class="lb" style="margin-bottom:.8rem"><b>추가할 앱</b><span>누르면 하단에 들어갑니다. 홈 화면에서 아이콘을 길게 눌러도 됩니다.</span></div><div class="pick-grid">' +
         all.filter((id) => dock.indexOf(id) < 0).map((id) => '<button class="pick" data-add="' + esc(id) + '">' + tileFor(id) + '<span>' + esc(appLabel(id)) + '</span></button>').join('') + '</div></div>' +
         row('기본값으로', '시간표, 급식, 가정통신문, 칠판, 학급 알림', '<button class="btn sm" id="dock-reset">되돌리기</button>')) +
-      group('수업 시작 전 알림', row('알림 켜기', '수업이 시작되기 전에 다음 교시와 과목을 화면에 띄웁니다. 수업 중과 수업이 끝날 때는 알리지 않습니다', sw('pc-on', h.preClass !== false)) +
-        row('몇 분 전', '', '<div class="tabs">' + [1, 2, 3, 5].map((m) => '<button data-pcm="' + m + '" class="' + ((h.preClassMin || 2) === m ? 'on' : '') + '">' + m + '분</button>').join('') + '</div>') +
+      group('수업 시작 전 알림', row('알림 켜기', '수업 시작 10초 전에 교시와 과목을 화면에 띄웁니다. 수업이 끝날 때는 알리지 않습니다', sw('pc-on', h.preClass !== false)) +
         row('알림음', '', sw('pc-snd', h.preClassSound !== false))) +
       group('검색', row('검색 엔진', '홈 화면 검색창과 인터넷 앱', '<div class="tabs">' + Object.keys(ENGINES).map((k) => '<button data-eng="' + k + '" class="' + ((h.search || 'naver') === k ? 'on' : '') + '">' + ENGINES[k][0] + '</button>').join('') + '</div>')) +
       group('성능', row('저사양 모드', '애니메이션과 그림자를 끄고 화면을 덜 자주 다시 그립니다' + (p ? ' · 이 기기: 메모리 ' + Math.round(p.totalMem / 1073741824 * 10) / 10 + 'GB, 코어 ' + p.cores + '개' : ''),
@@ -1481,7 +1479,6 @@
     $('#dock-reset').onclick = () => set(DEFAULT_DOCK.slice());
     $('#pc-on').onchange = (e) => saveHome({ preClass: e.target.checked });
     $('#pc-snd').onchange = (e) => saveHome({ preClassSound: e.target.checked });
-    C.$$('[data-pcm]', c).forEach((b) => { b.onclick = () => saveHome({ preClassMin: Number(b.dataset.pcm) }).then(() => renderSettings()); });
     C.$$('[data-eng]', c).forEach((b) => { b.onclick = () => saveHome({ search: b.dataset.eng }).then(() => renderSettings()); });
     C.$$('[data-lite]', c).forEach((b) => { b.onclick = () => saveHome({ lite: b.dataset.lite }).then(() => { applyLite(); renderSettings(); }); });
   }
@@ -1691,7 +1688,6 @@
     $('#ca-send').onclick = () => {
       const t = $('#ca-text').value.trim();
       if (!t) { toast('띄울 문구를 입력하세요'); return; }
-      if (S.seg.type === 'class') { toast('수업 중에는 학급 알림을 보낼 수 없습니다'); return; }
       fireClassAlert({ label: t, sub: '', icon: 'megaphone', color: 'violet', sound: 'soft' });
     };
     $('#ca-save').onclick = () => saveSettings({ classAlerts: $('#ca-on').checked, alertSound: $('#ca-sound').checked, alertSeconds: Math.max(3, Number($('#ca-sec').value) || 8), alertCooldown: Math.max(0, Number($('#ca-cool').value) || 0) });

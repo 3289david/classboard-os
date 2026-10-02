@@ -73,7 +73,7 @@ class MemoOverlay {
         barLp = base(bar.w, bar.h, 0);
         barLp.gravity = Gravity.TOP | Gravity.START;
         barLp.x = (m.widthPixels - bar.w) / 2;
-        barLp.y = m.heightPixels - bar.h - (int) dp(190); // above the board's own dock
+        barLp.y = m.heightPixels - bar.h - (int) dp(256); // above the board's own dock and page dots
         try {
             wm.addView(bar, barLp);
         } catch (Exception e) {
@@ -119,23 +119,23 @@ class MemoOverlay {
         Toolbar(Context c, int screenW) {
             super(c);
             int slots = COLORS.length + TOOLS.length;
-            float want = dp(42);
-            pad = dp(7);
-            grip = dp(24);
+            float want = dp(21);
+            pad = dp(4);
+            grip = dp(14);
             // shrink buttons on narrow screens so the whole bar always fits
-            cell = Math.min(want, (screenW - dp(32) - pad * 2 - grip - dp(14)) / slots);
-            w = (int) (pad * 2 + grip + dp(14) + cell * slots);
+            cell = Math.min(want, (screenW - dp(32) - pad * 2 - grip - dp(8)) / slots);
+            w = (int) (pad * 2 + grip + dp(8) + cell * slots);
             h = (int) (cell + pad * 2);
             line.setStyle(Paint.Style.STROKE);
             line.setStrokeCap(Paint.Cap.ROUND);
             line.setStrokeJoin(Paint.Join.ROUND);
-            line.setStrokeWidth(dp(1.9f));
+            line.setStrokeWidth(dp(1.2f));
             line.setColor(Color.WHITE);
         }
 
         private float slotX(int i) {
             int sepBefore = i >= COLORS.length ? 1 : 0;
-            return pad + grip + i * cell + sepBefore * dp(14);
+            return pad + grip + i * cell + sepBefore * dp(8);
         }
 
         @Override
@@ -152,8 +152,8 @@ class MemoOverlay {
             fill.setColor(0x80FFFFFF);
             float gx = pad + grip / 2f, cy = h / 2f;
             for (int i = -1; i <= 1; i++) {
-                c.drawCircle(gx - dp(4), cy + i * dp(7), dp(1.8f), fill);
-                c.drawCircle(gx + dp(4), cy + i * dp(7), dp(1.8f), fill);
+                c.drawCircle(gx - dp(2.2f), cy + i * dp(3.6f), dp(1f), fill);
+                c.drawCircle(gx + dp(2.2f), cy + i * dp(3.6f), dp(1f), fill);
             }
             // colors
             for (int i = 0; i < COLORS.length; i++) {
@@ -161,7 +161,7 @@ class MemoOverlay {
                 float rr = cell * 0.27f;
                 if (i == color && !eraser) {
                     line.setColor(Color.WHITE);
-                    c.drawCircle(cx, cy, rr + dp(5), line);
+                    c.drawCircle(cx, cy, rr + dp(2.5f), line);
                 }
                 fill.setColor(COLORS[i]);
                 c.drawCircle(cx, cy, rr, fill);
@@ -169,12 +169,12 @@ class MemoOverlay {
                     line.setColor(0x66FFFFFF);
                     line.setStrokeWidth(dp(1));
                     c.drawCircle(cx, cy, rr, line);
-                    line.setStrokeWidth(dp(2.2f));
+                    line.setStrokeWidth(dp(1.2f));
                 }
             }
             // separator
             fill.setColor(0x26FFFFFF);
-            float sx = slotX(COLORS.length) - dp(7);
+            float sx = slotX(COLORS.length) - dp(4);
             c.drawRect(sx - dp(.5f), cy - cell * .3f, sx + dp(.5f), cy + cell * .3f, fill);
             line.setColor(Color.WHITE);
             for (int t = 0; t < TOOLS.length; t++) {
@@ -183,7 +183,7 @@ class MemoOverlay {
                 boolean active = ("marker".equals(k) && marker) || ("eraser".equals(k) && eraser) || ("hand".equals(k) && hand);
                 if (active) {
                     fill.setColor(0x33FFFFFF);
-                    c.drawRoundRect(new RectF(x0 + dp(4), cy - cell / 2f + dp(4), x0 + cell - dp(4), cy + cell / 2f - dp(4)), dp(12), dp(12), fill);
+                    c.drawRoundRect(new RectF(x0 + dp(2), cy - cell / 2f + dp(2), x0 + cell - dp(2), cy + cell / 2f - dp(2)), dp(6), dp(6), fill);
                 }
                 drawTool(c, k, cx, cy, cell * 0.2f);
             }
@@ -194,7 +194,7 @@ class MemoOverlay {
             switch (k) {
                 case "size": {
                     fill.setColor(Color.WHITE);
-                    float rr = new float[]{dp(2), dp(3.5f), dp(5.5f), dp(8)}[canvas == null ? 1 : canvas.wi];
+                    float rr = new float[]{dp(1f), dp(1.8f), dp(2.8f), dp(4f)}[canvas == null ? 1 : canvas.wi];
                     c.drawCircle(cx, cy, rr, fill);
                     break;
                 }
