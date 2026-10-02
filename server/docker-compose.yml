@@ -9,5 +9,8 @@ services:
     environment:
       - NEIS_KEY=${NEIS_KEY:-}
       - STATUS_KEY=${STATUS_KEY:-}
+      - GITHUB_REPO=${GITHUB_REPO:-3289david/classboard-os}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - AUTO_APP_UPDATE=${AUTO_APP_UPDATE:-1}
     volumes:
       - ./data:/data

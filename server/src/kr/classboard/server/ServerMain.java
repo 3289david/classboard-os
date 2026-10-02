@@ -50,6 +50,18 @@ public final class ServerMain {
         DataFetcher fetcher = new DataFetcher(new File(dir, "data.json"));
         OfficeSetup.start(dir); // LibreOffice + HWP import for attachments, installed automatically when missing
         ServerApi api = new ServerApi(store, devices, fetcher, env("STATUS_KEY", ""), dir);
+        // new board app from the latest GitHub release -> boards install it themselves
+        GitHubApp.start(new GitHubApp.Sink() {
+            @Override
+            public boolean save(byte[] apk, String tag, long assetId) throws Exception {
+                return api.saveApp(apk, tag, assetId);
+            }
+
+            @Override
+            public long currentAssetId() {
+                return api.appAssetId();
+            }
+        });
 
         HttpServer http = new HttpServer(api::handle);
         http.start(port);

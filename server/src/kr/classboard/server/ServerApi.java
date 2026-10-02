@@ -399,13 +399,31 @@ public class ServerApi {
         if (statusKey.isEmpty()) throw new ApiException(403, "STATUS_KEY를 설정해야 앱을 올릴 수 있습니다");
         if (!statusKey.equals(r.param("key"))) throw new ApiException(401, "상태 페이지 키가 맞지 않습니다");
         byte[] b = r.body();
-        if (b.length < 1024 || b[0] != 'P' || b[1] != 'K') throw new ApiException(400, "APK 파일이 아닙니다");
-        appFile.getParentFile().mkdirs();
-        Util.writeFileAtomic(appFile, b);
-        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
-        JSONObject o = Util.jo("sha256", Util.hex(md.digest(b)), "size", (long) b.length, "mtime", appFile.lastModified(), "uploadedAt", now());
-        Util.writeFileAtomic(new java.io.File(appFile.getPath() + ".json"), o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        if (!saveApp(b, "", 0)) throw new ApiException(400, "APK 파일이 아닙니다");
         return Response.json(Util.jo("ok", true, "size", b.length));
+    }
+
+    /** Keep a new board app (from the status page or the latest GitHub release). */
+    boolean saveApp(byte[] b, String tag, long assetId) throws Exception {
+        if (b.length < 1024 || b[0] != 'P' || b[1] != 'K') return false;
+        synchronized (appFile) {
+            appFile.getParentFile().mkdirs();
+            Util.writeFileAtomic(appFile, b);
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            JSONObject o = Util.jo("sha256", Util.hex(md.digest(b)), "size", (long) b.length, "mtime", appFile.lastModified(), "uploadedAt", now(),
+                    "tag", tag, "assetId", assetId);
+            Util.writeFileAtomic(new java.io.File(appFile.getPath() + ".json"), o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        return true;
+    }
+
+    long appAssetId() {
+        try {
+            JSONObject m = appMeta();
+            return m == null ? -1 : m.optLong("assetId", -1);
+        } catch (Exception e) {
+            return -1;
+        }
     }
 
     private String appSection(boolean canAdmin) {
@@ -415,15 +433,17 @@ public class ServerApi {
         } catch (Exception e) {
             m = null;
         }
-        String info = m == null ? "올려 둔 앱이 없습니다." : "올린 앱: " + (m.optLong("size") / 1024) + "KB · " + ago(m.optLong("uploadedAt")) + " · " + m.optString("sha256").substring(0, 12);
+        String info = m == null ? "올려 둔 앱이 없습니다." : "전자칠판에 줄 앱: " + (m.optString("tag").isEmpty() ? "직접 올림" : "GitHub " + m.optString("tag")) + " · "
+                + (m.optLong("size") / 1024) + "KB · " + ago(m.optLong("uploadedAt"));
+        info += "\nGitHub 자동 확인: " + GitHubApp.state + (GitHubApp.lastCheck > 0 ? " · " + ago(GitHubApp.lastCheck) + " 확인" : "");
         String form = !canAdmin ? "<p class=n>앱을 올리려면 서버에 STATUS_KEY를 설정하세요.</p>"
                 : "<p style='margin:10px 0 0'><input type=file id=apk accept='.apk' onclick='busy=true' onchange='up(this)'> <span id=upmsg class=n></span></p>"
                 + "<script>function up(i){var f=i.files[0];if(!f)return;busy=true;var m=document.getElementById('upmsg');m.textContent='올리는 중...';"
                 + "fetch('/admin/app?key='+encodeURIComponent('" + esc(statusKey).replace("'", "") + "'),{method:'POST',body:f}).then(function(r){return r.json()})"
                 + ".then(function(d){if(d.ok){m.textContent='올렸습니다. 전자칠판이 30분 안에 받아서 설치합니다.';setTimeout(function(){location.reload()},2500)}else{m.textContent=d.error;busy=false}})"
                 + ".catch(function(e){m.textContent=String(e);busy=false})}</script>";
-        return "<section><h2>전자칠판 앱 업데이트</h2><p style='margin:0'>" + esc(info) + "</p>" + form
-                + "<p class=n>새 ClassBoardOS.apk를 올리면, 전자칠판이 버전을 확인해 더 새 버전일 때만 수업 시간이 아닐 때 설치합니다.</p></section>";
+        return "<section><h2>전자칠판 앱 업데이트</h2><p style='margin:0;white-space:pre-line'>" + esc(info) + "</p>" + form
+                + "<p class=n>서버가 30분마다 GitHub의 최신 릴리스를 확인해 새 ClassBoardOS.apk를 받아 둡니다. 전자칠판은 더 새 버전일 때만, 수업 시간이 아닐 때 설치합니다. 직접 올려도 됩니다.</p></section>";
     }
 
     // ------------------------------------------------------------------ status page
