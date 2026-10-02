@@ -28,6 +28,7 @@ public class SyncClient {
     private volatile long rev = -1;
     private volatile boolean online;
     private volatile long lastOk;
+    private volatile boolean disconnected;
     private volatile String lastError = "";
     private volatile boolean running;
     private final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
@@ -83,7 +84,7 @@ public class SyncClient {
     }
 
     public JSONObject status() {
-        return Util.jo("online", online, "lastOk", lastOk, "error", lastError, "rev", rev, "hubUrl", base());
+        return Util.jo("online", online, "lastOk", lastOk, "error", lastError, "rev", rev, "hubUrl", base(), "disconnected", disconnected);
     }
 
     public void start() {
@@ -114,6 +115,19 @@ public class SyncClient {
                 c.setRequestProperty("X-Device-Id", cfg.deviceId());
                 c.setRequestProperty("X-Device-Name", URLEncoder.encode(cfg.name(), "UTF-8"));
                 int code = c.getResponseCode();
+                if (code == 410) {
+                    // the school server removed this board: stop asking often, show it on screen
+                    disconnected = true;
+                    boolean was = online;
+                    online = false;
+                    lastError = "학교 서버에서 연결 해제됨";
+                    if (was) wake();
+                    for (Runnable l : listeners) l.run();
+                    c.disconnect();
+                    sleep(5 * 60_000L);
+                    continue;
+                }
+                disconnected = false;
                 if (code != 200) throw new Exception("HTTP " + code);
                 String body;
                 try (InputStream in = c.getInputStream()) {

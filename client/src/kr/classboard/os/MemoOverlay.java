@@ -119,9 +119,9 @@ class MemoOverlay {
         Toolbar(Context c, int screenW) {
             super(c);
             int slots = COLORS.length + TOOLS.length;
-            float want = dp(54);
-            pad = dp(10);
-            grip = dp(30);
+            float want = dp(42);
+            pad = dp(7);
+            grip = dp(24);
             // shrink buttons on narrow screens so the whole bar always fits
             cell = Math.min(want, (screenW - dp(32) - pad * 2 - grip - dp(14)) / slots);
             w = (int) (pad * 2 + grip + dp(14) + cell * slots);
@@ -129,7 +129,7 @@ class MemoOverlay {
             line.setStyle(Paint.Style.STROKE);
             line.setStrokeCap(Paint.Cap.ROUND);
             line.setStrokeJoin(Paint.Join.ROUND);
-            line.setStrokeWidth(dp(2.2f));
+            line.setStrokeWidth(dp(1.9f));
             line.setColor(Color.WHITE);
         }
 

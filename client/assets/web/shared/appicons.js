@@ -91,6 +91,9 @@
       '<rect x="10" y="17" width="44" height="30" rx="4" fill="#3B4250"/><rect x="12" y="19" width="40" height="26" rx="3" fill="#121418"/>' +
       '<path d="M18 26h28l-3.5 8.5h-21Z" fill="#fff"/><path d="M22 28.2h20" stroke="#121418" stroke-width="1.6" stroke-dasharray="1.6 1.4"/>' +
       '<text x="32" y="42.5" text-anchor="middle" font-size="6.6" font-weight="700" fill="#9AA4B5" font-family="inherit" letter-spacing=".6">HDMI</text>'),
+    alerts: () => colored('alerts', '#8C7BFF', '#5640E0',
+      '<path d="M32 13c-7.2 0-12 5.6-12 12.6v8.2l-3.6 5.6c-.9 1.4.1 3.1 1.7 3.1h27.8c1.6 0 2.6-1.7 1.7-3.1L44 33.8v-8.2C44 18.6 39.2 13 32 13Z" fill="#fff"/>' +
+      '<path d="M26.6 46a5.6 5.6 0 0 0 10.8 0Z" fill="#fff"/><circle cx="44.5" cy="17.5" r="5" fill="#FF5A52" stroke="#6A55F0" stroke-width="2"/>'),
     drawer: () => colored('drawer', '#7C8594', '#4C5462',
       [0, 1, 2].map((y) => [0, 1, 2].map((x) => '<circle cx="' + (20 + x * 12) + '" cy="' + (20 + y * 12) + '" r="4" fill="#fff"/>').join('')).join('')),
   };

@@ -317,6 +317,7 @@ public class CoreService extends Service {
                 }
                 seg = "after";
             }
+            preClassNotice(slots, periodsToday, now);
             if (!seg.equals(lastSegment)) {
                 String prev = lastSegment;
                 lastSegment = seg;
@@ -328,6 +329,73 @@ public class CoreService extends Service {
         } catch (Exception e) {
             Log.w(TAG, "tick", e);
         }
+    }
+
+    private String lastNotice = "";
+
+    /** "곧 N교시 시작" a few minutes before each class (설정 → 홈 화면 → 수업 시작 전 알림). */
+    private void preClassNotice(List<Periods.Slot> slots, int periodsToday, int now) {
+        JSONObject home = cfg.home();
+        if (!home.optBoolean("preClass", true)) return;
+        int before = Math.max(1, Math.min(10, home.optInt("preClassMin", 2)));
+        for (Periods.Slot s : slots) {
+            if (periodsToday > 0 && s.period > periodsToday) break;
+            if (now == s.start - before) {
+                String key = Util.today() + "/" + s.period;
+                if (key.equals(lastNotice)) return;
+                lastNotice = key;
+                String subject = subjectAt(s.period);
+                if (home.optBoolean("preClassSound", true)) Chime.play("soft");
+                overlays.showClassAlert(before + "분 뒤 " + s.period + "교시" + (subject.isEmpty() ? "" : " " + subject),
+                        "자리에 앉아 수업을 준비해 주세요", 0xFF2F6BEA, 12, false);
+                MainActivity.notifyWeb("preclass", Util.jo("period", s.period, "minutes", before, "subject", subject).toString());
+                return;
+            }
+        }
+    }
+
+    private String subjectAt(int period) {
+        try {
+            JSONObject full = fetcher.comci();
+            JSONArray fw = full == null ? null : full.optJSONArray("weeks");
+            for (int i = 0; fw != null && i < fw.length(); i++) {
+                JSONObject w = fw.optJSONObject(i);
+                JSONArray dates = w.optJSONArray("dates");
+                JSONObject cl = w.optJSONObject("classes");
+                JSONArray days = cl == null ? null : cl.optJSONArray(cfg.cls());
+                for (int d = 0; dates != null && days != null && d < dates.length(); d++) {
+                    if (!Util.today().equals(dates.optString(d))) continue;
+                    JSONArray ps = days.optJSONArray(d);
+                    for (int k = 0; ps != null && k < ps.length(); k++) {
+                        if (ps.optJSONObject(k).optInt("p") == period) return ps.optJSONObject(k).optString("s");
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
+    }
+
+    public boolean inClass() {
+        return lastSegment.startsWith("class");
+    }
+
+    private long lastClassAlert;
+
+    /** Class alerts from the quick panel or the board: not during lessons, not twice within the wait time. */
+    public String fireClassAlert(String type) {
+        JSONObject st = cfg.settings();
+        if (!st.optBoolean("classAlerts", true)) return "학급 알림이 꺼져 있습니다 (설정 → 학급 알림)";
+        if (inClass()) return "수업 중에는 학급 알림을 보낼 수 없습니다";
+        long cool = st.optInt("alertCooldown", 10) * 1000L;
+        long left = cool - (System.currentTimeMillis() - lastClassAlert);
+        if (left > 0) return ((left + 999) / 1000) + "초 후에 다시 보낼 수 있습니다";
+        lastClassAlert = System.currentTimeMillis();
+        String[] t = classAlertText(type);
+        boolean quiet = "quiet".equals(type);
+        if (st.optBoolean("alertSound", true)) Chime.play(quiet ? "quiet" : "soft");
+        overlays.showClassAlert(t[0], t[1], Integer.parseInt(t[2]), Math.max(3, st.optInt("alertSeconds", 8)), quiet);
+        return null;
     }
 
     private void onClassStart(JSONObject settings, JSONObject st, int period) {
@@ -364,7 +432,8 @@ public class CoreService extends Service {
     }
 
     private void onClassEnd(JSONObject settings) {
-        if (!settings.optBoolean("resetOnEnd", true)) return;
+        // Off unless switched on: closing the teacher's app and jumping home when the bell rings was disruptive.
+        if (!settings.optBoolean("resetOnEnd", false)) return;
         overlays.hideAll();
         File tmp = new File(getCacheDir(), "open");
         File[] fs = tmp.listFiles();
@@ -382,6 +451,9 @@ public class CoreService extends Service {
                 break;
             case "memo":
                 overlays.toggleMemo();
+                break;
+            case "alert":
+                overlays.toggleAlertPanel(this::fireClassAlert);
                 break;
             case "back":
             case "recents":

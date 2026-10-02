@@ -70,6 +70,9 @@ public class DeviceConfig {
         }
         if (o.has("search") && o.optString("search").matches("naver|google|daum")) Util.put(h, "search", o.optString("search"));
         if (o.has("lite") && o.optString("lite").matches("auto|on|off")) Util.put(h, "lite", o.optString("lite"));
+        if (o.has("preClass")) Util.put(h, "preClass", o.optBoolean("preClass"));
+        if (o.has("preClassSound")) Util.put(h, "preClassSound", o.optBoolean("preClassSound"));
+        if (o.has("preClassMin")) Util.put(h, "preClassMin", Math.max(1, Math.min(10, o.optInt("preClassMin", 2))));
         sp.edit().putString("home", h.toString()).apply();
     }
 

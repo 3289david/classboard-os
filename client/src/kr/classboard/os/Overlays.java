@@ -154,6 +154,107 @@ public class Overlays {
         emergencyId = null;
     }
 
+    // ---------------------------------------------------------------- class alert quick panel
+
+    private View alertPanel;
+
+    public interface AlertHandler {
+        /** @return null when sent, otherwise why it was not sent */
+        String fire(String type);
+    }
+
+    static final String[][] ALERT_BUTTONS = {
+            {"quiet", "조용히 해주세요", "#3F51B5"}, {"ready", "수업 준비", "#EF6C00"},
+            {"clean", "청소 시작", "#2E7D32"}, {"notice", "전달사항 있습니다", "#00838F"}};
+
+    /** Small panel with the class alert buttons, shown over any app (from the 학급 알림 app or the bell key). */
+    public void toggleAlertPanel(AlertHandler h) {
+        ui.post(() -> {
+            if (alertPanel != null) {
+                hideAlertPanelNow();
+                return;
+            }
+            if (!allowed()) return;
+            LinearLayout box = new LinearLayout(ctx);
+            box.setOrientation(LinearLayout.VERTICAL);
+            box.setPadding(dp(18), dp(14), dp(18), dp(18));
+            box.setBackground(rounded(0xF21E2128, dp(26)));
+            LinearLayout head = new LinearLayout(ctx);
+            head.setGravity(Gravity.CENTER_VERTICAL);
+            TextView title = new TextView(ctx);
+            title.setText("학급 알림");
+            title.setTextColor(Color.WHITE);
+            title.setTextSize(20);
+            title.setTypeface(Typeface.DEFAULT_BOLD);
+            head.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            TextView close = new TextView(ctx);
+            close.setText("닫기");
+            close.setTextColor(0xCCFFFFFF);
+            close.setTextSize(17);
+            close.setPadding(dp(14), dp(8), dp(6), dp(8));
+            close.setOnClickListener(v -> hideAlertPanelNow());
+            head.addView(close);
+            box.addView(head);
+            TextView msg = new TextView(ctx);
+            msg.setTextColor(0xFFFFB4AB);
+            msg.setTextSize(15);
+            msg.setVisibility(View.GONE);
+            box.addView(msg);
+            for (String[] b : ALERT_BUTTONS) {
+                TextView btn = new TextView(ctx);
+                btn.setText(b[1]);
+                btn.setTextColor(Color.WHITE);
+                btn.setTextSize(22);
+                btn.setTypeface(Typeface.DEFAULT_BOLD);
+                btn.setGravity(Gravity.CENTER_VERTICAL);
+                btn.setPadding(dp(22), 0, dp(22), 0);
+                btn.setBackground(rounded(Color.parseColor(b[2]), dp(16)));
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64));
+                l.topMargin = dp(10);
+                btn.setOnClickListener(v -> {
+                    String why = h.fire(b[0]);
+                    if (why == null) hideAlertPanelNow();
+                    else {
+                        msg.setText(why);
+                        msg.setVisibility(View.VISIBLE);
+                        fitWindow(box, (WindowManager.LayoutParams) box.getLayoutParams());
+                        wm.updateViewLayout(box, box.getLayoutParams());
+                    }
+                });
+                box.addView(btn, l);
+            }
+            WindowManager.LayoutParams lp = params(false, false);
+            lp.flags &= ~WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
+            lp.gravity = Gravity.BOTTOM | Gravity.END;
+            lp.x = dp(24);
+            lp.y = dp(84);
+            int w = dp(340);
+            box.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            lp.width = w;
+            lp.height = box.getMeasuredHeight();
+            try {
+                wm.addView(box, lp);
+                alertPanel = box;
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    private void fitWindow(LinearLayout box, WindowManager.LayoutParams lp) {
+        box.measure(View.MeasureSpec.makeMeasureSpec(lp.width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        lp.height = box.getMeasuredHeight();
+    }
+
+    private void hideAlertPanelNow() {
+        if (alertPanel != null) {
+            try {
+                wm.removeView(alertPanel);
+            } catch (Exception ignored) {
+            }
+        }
+        alertPanel = null;
+    }
+
     // ---------------------------------------------------------------- class alert
 
     private Runnable flashTick;
@@ -282,7 +383,7 @@ public class Overlays {
             bar.setGravity(Gravity.CENTER);
             bar.setPadding(dp(14), dp(4), dp(14), dp(4));
             bar.setBackground(rounded(0xCC15181E, dp(26)));
-            for (String a : new String[]{"back", "home", "recents", "memo"}) {
+            for (String a : new String[]{"back", "home", "recents", "memo", "alert"}) {
                 NavKey k = new NavKey(ctx, a);
                 LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(dp(64), dp(48));
                 l.setMargins(dp(6), 0, dp(6), 0);
@@ -348,6 +449,18 @@ public class Overlays {
                     break;
                 case "recents":
                     c.drawRoundRect(cx - r * 0.9f, cy - r * 0.9f, cx + r * 0.9f, cy + r * 0.9f, r * 0.2f, r * 0.2f, p);
+                    break;
+                case "alert":
+                    // bell
+                    path.moveTo(cx - r * .85f, cy + r * .55f);
+                    path.lineTo(cx - r * .6f, cy + r * .2f);
+                    path.lineTo(cx - r * .6f, cy - r * .2f);
+                    path.cubicTo(cx - r * .6f, cy - r * 1.05f, cx + r * .6f, cy - r * 1.05f, cx + r * .6f, cy - r * .2f);
+                    path.lineTo(cx + r * .6f, cy + r * .2f);
+                    path.lineTo(cx + r * .85f, cy + r * .55f);
+                    path.close();
+                    c.drawPath(path, p);
+                    c.drawLine(cx - r * .25f, cy + r * .9f, cx + r * .25f, cy + r * .9f, p);
                     break;
                 default:
                     path.moveTo(cx - r, cy + r);

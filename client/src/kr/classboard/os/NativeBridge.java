@@ -489,6 +489,25 @@ public class NativeBridge {
 
     // ---------------------------------------------------------------- tools
 
+    /** The class alert panel (works over any app). */
+    @JavascriptInterface
+    public String alertPanel() {
+        CoreService cs = CoreService.get();
+        if (cs == null) return err("서비스가 실행 중이 아닙니다");
+        if (!cs.overlays().allowed()) return err("학급 알림 창을 띄우려면 '다른 앱 위에 표시' 권한이 필요합니다");
+        cs.overlays().toggleAlertPanel(cs::fireClassAlert);
+        return ok();
+    }
+
+    /** Fire a class alert from the board itself (same rules as the panel). */
+    @JavascriptInterface
+    public String classAlert(String type) {
+        CoreService cs = CoreService.get();
+        if (cs == null) return err("서비스가 실행 중이 아닙니다");
+        String why = cs.fireClassAlert(type);
+        return why == null ? ok() : err(why);
+    }
+
     @JavascriptInterface
     public String memo() {
         CoreService cs = CoreService.get();

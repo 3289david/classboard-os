@@ -59,6 +59,9 @@ public class ServerApi {
                         "school", store.read(root -> Util.obj(Util.obj(root, "config"), "school").optString("name"))));
             case "/api/state":
                 return state(r);
+            case "/admin/disconnect":
+            case "/admin/allow":
+                return admin(r);
             case "/api/shared":
                 return shared(r);
             case "/api/device/hello":
@@ -78,9 +81,19 @@ public class ServerApi {
 
     // ------------------------------------------------------------------ boards
 
+    private boolean blocked(String id) {
+        if (id == null || id.isEmpty()) return false;
+        return devices.read(root -> root.optJSONObject("_blocked") != null && root.optJSONObject("_blocked").has(id));
+    }
+
+    private static ApiException gone() {
+        return new ApiException(410, "이 전자칠판은 학교 서버에서 연결 해제되었습니다");
+    }
+
     private void touch(Request r) throws Exception {
         String id = r.header("x-device-id");
         if (id == null || id.isEmpty() || id.length() > 64) return;
+        if (blocked(id)) throw gone();
         String name = r.header("x-device-name");
         seen.put(id, Util.jo("at", now(), "name", name == null ? "" : URLDecoder.decode(name, "UTF-8")));
         if (now() - lastPersist > 5 * 60_000L) {
@@ -123,6 +136,7 @@ public class ServerApi {
         JSONObject b = r.json();
         String id = b.optString("deviceId");
         if (id.isEmpty() || id.length() > 64 || !id.matches("[A-Za-z0-9_-]+")) throw new ApiException(400, "deviceId 누락");
+        if (blocked(id)) throw gone();
         final String[] key = {null};
         devices.write(root -> {
             JSONObject d = Util.obj(root, id);
@@ -296,6 +310,44 @@ public class ServerApi {
         }
     }
 
+    // ------------------------------------------------------------------ admin (status page buttons)
+
+    private static java.util.Map<String, String> form(Request r) throws Exception {
+        java.util.Map<String, String> m = new java.util.HashMap<>();
+        String body = "POST".equals(r.method) ? r.bodyString() : "";
+        for (String kv : body.split("&")) {
+            int i = kv.indexOf('=');
+            if (i > 0) m.put(URLDecoder.decode(kv.substring(0, i), "UTF-8"), URLDecoder.decode(kv.substring(i + 1), "UTF-8"));
+        }
+        return m;
+    }
+
+    /** 연결 해제 / 다시 허용 from the status page. Needs STATUS_KEY, so only the server's owner can do it. */
+    private Response admin(Request r) throws Exception {
+        if (!"POST".equals(r.method)) throw new ApiException(405, "POST만 됩니다");
+        java.util.Map<String, String> f = form(r);
+        if (statusKey.isEmpty()) throw new ApiException(403, "STATUS_KEY를 설정해야 전자칠판 연결을 해제할 수 있습니다");
+        if (!statusKey.equals(f.get("key"))) throw new ApiException(401, "상태 페이지 키가 맞지 않습니다");
+        String id = f.get("id");
+        if (id == null || !id.matches("[A-Za-z0-9_-]{1,64}")) throw new ApiException(400, "전자칠판 ID");
+        boolean disconnect = r.path.endsWith("disconnect");
+        devices.write(root -> {
+            JSONObject blockedList = Util.obj(root, "_blocked");
+            if (disconnect) {
+                JSONObject d = root.optJSONObject(id);
+                Util.put(blockedList, id, Util.jo("name", d == null ? "" : d.optString("name"), "cls", d == null ? "" : d.optString("cls"), "at", now()));
+                root.remove(id);
+            } else {
+                blockedList.remove(id);
+            }
+        });
+        if (disconnect) seen.remove(id);
+        Response res = Response.bytes(new byte[0], "text/plain");
+        res.status = 303;
+        res.headers.put("Location", "/?key=" + java.net.URLEncoder.encode(statusKey, "UTF-8"));
+        return res;
+    }
+
     // ------------------------------------------------------------------ status page
 
     private static String esc(String s) {
@@ -333,6 +385,8 @@ public class ServerApi {
             errs.append("<li><b>").append(esc(k)).append("</b>: ").append(esc(errors.optJSONObject(k).optString("message"))).append("</li>");
         }
         StringBuilder devs = new StringBuilder();
+        boolean canAdmin = !statusKey.isEmpty();
+        String keyField = "<input type=hidden name=key value='" + esc(statusKey) + "'>";
         JSONObject all = devices.snapshot();
         JSONArray names = all.names();
         int online = 0;
@@ -347,7 +401,25 @@ public class ServerApi {
             String cls = dv.optString("cls");
             devs.append("<tr><td>").append(esc(dv.optString("name"))).append("</td><td>").append(cls.isEmpty() ? "-" : esc(cls.replace("-", "학년 ") + "반"))
                     .append("</td><td>").append(esc(dv.optString("version"))).append("</td><td class=").append(on ? "on" : "off").append(">")
-                    .append(on ? "연결됨" : ago(last)).append("</td></tr>");
+                    .append(on ? "연결됨" : ago(last)).append("</td><td>");
+            if (canAdmin) {
+                devs.append("<form method=post action='/admin/disconnect' onsubmit=\"return confirm('")
+                        .append(esc(dv.optString("name")).replace("'", "")).append(" 전자칠판의 연결을 해제할까요? 이 칠판은 학교 서버에서 데이터를 받지 못합니다.')\">")
+                        .append(keyField).append("<input type=hidden name=id value='").append(esc(id)).append("'><button class=danger>연결 해제</button></form>");
+            }
+            devs.append("</td></tr>");
+        }
+        StringBuilder blockedRows = new StringBuilder();
+        JSONObject bl = all.optJSONObject("_blocked");
+        JSONArray bn = bl == null ? null : bl.names();
+        for (int i = 0; bn != null && i < bn.length(); i++) {
+            String id = bn.optString(i);
+            JSONObject b = bl.optJSONObject(id);
+            String cls = b.optString("cls");
+            blockedRows.append("<tr><td>").append(esc(b.optString("name"))).append("</td><td>").append(cls.isEmpty() ? "-" : esc(cls.replace("-", "학년 ") + "반"))
+                    .append("</td><td>").append(ago(b.optLong("at"))).append(" 해제</td><td>")
+                    .append(canAdmin ? "<form method=post action='/admin/allow'>" + keyField + "<input type=hidden name=id value='" + esc(id) + "'><button>다시 허용</button></form>" : "")
+                    .append("</td></tr>");
         }
         String school = Util.obj(cfg, "school").optString("name");
         String html = "<!doctype html><html lang=ko><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -355,10 +427,14 @@ public class ServerApi {
                 + "body{font-family:'Pretendard','Noto Sans KR','Malgun Gothic',system-ui,sans-serif;background:#0e1116;color:#eef2f7;margin:0;padding:32px}"
                 + "h1{margin:0 0 4px;font-size:26px}p.s{color:#a9b4c3;margin:0 0 24px}section{background:#1a2029;border-radius:14px;padding:18px 20px;margin-bottom:16px;max-width:760px}"
                 + "h2{font-size:16px;color:#a9b4c3;margin:0 0 10px}table{width:100%;border-collapse:collapse}td,th{padding:8px 6px;border-bottom:1px solid #2a3340;text-align:left;font-size:14px}"
-                + ".on{color:#3ecf8e}.off{color:#748196}li{margin:4px 0;color:#ff8a80}</style></head><body>"
+                + ".on{color:#3ecf8e}.off{color:#748196}li{margin:4px 0;color:#ff8a80}"
+                + "form{margin:0}button{font:inherit;font-size:13px;padding:6px 12px;border-radius:8px;border:0;background:#2a3340;color:#eef2f7;cursor:pointer}"
+                + "button.danger{background:#5a2328;color:#ffb4ae}button:hover{filter:brightness(1.2)}p.n{color:#748196;font-size:13px;margin:10px 0 0}</style></head><body>"
                 + "<h1>" + esc(school) + " 전자칠판 데이터 서버</h1><p class=s>버전 " + BuildInfo.VERSION + " · 전자칠판 " + online + "대 연결됨 · 30초마다 새로고침</p>"
                 + "<section><h2>데이터</h2><table>" + rows + "<tr><td>첨부파일 변환 (HWP · 오피스)</td><td>" + esc(OfficeSetup.state) + "</td></tr></table>" + (errs.length() > 0 ? "<h2 style='margin-top:14px'>최근 오류</h2><ul>" + errs + "</ul>" : "") + "</section>"
-                + "<section><h2>전자칠판</h2><table><tr><th>이름</th><th>학급</th><th>버전</th><th>상태</th></tr>" + devs + "</table></section>"
+                + "<section><h2>전자칠판</h2><table><tr><th>이름</th><th>학급</th><th>버전</th><th>상태</th><th></th></tr>" + devs + "</table>"
+                + (canAdmin ? "" : "<p class=n>연결 해제 버튼을 쓰려면 서버에 STATUS_KEY를 설정하세요.</p>") + "</section>"
+                + (blockedRows.length() > 0 ? "<section><h2>연결 해제된 전자칠판</h2><table>" + blockedRows + "</table></section>" : "")
                 + "</body></html>";
         return Response.bytes(ServerMain.utf8(html), "text/html; charset=utf-8");
     }

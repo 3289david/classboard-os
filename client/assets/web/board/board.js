@@ -136,7 +136,7 @@
     setInterval(pollSys, 20000);
     setInterval(tick, 1000);
     // server link status comes from the device's sync client (the state long-poll only reports on change)
-    const pollDevice = () => C.get('/api/local/device', pinHeaders()).then((d) => { S.device = d; if (d.sync) S.online = !!d.sync.online; renderTop(); }).catch(() => {});
+    const pollDevice = () => C.get('/api/local/device', pinHeaders()).then((d) => { S.device = d; if (d.sync) { S.online = !!d.sync.online; S.disconnected = !!d.sync.disconnected; } renderTop(); }).catch(() => {});
     setTimeout(pollDevice, 2500);
     setInterval(pollDevice, 15000);
     setTimeout(bootDone, 6000);
@@ -228,7 +228,7 @@
     $('#t-class').textContent = cls() ? classLabel(cls()) : (S.device.name || '교실 미지정');
     const st = [];
     const ok = S.online && S.state;
-    st.push('<span class="st' + (ok ? '' : ' bad') + '"><span class="dot"></span>' + (ok ? '학교 서버' : '서버 연결 끊김') + '</span>');
+    st.push('<span class="st' + (ok ? '' : ' bad') + '"><span class="dot"></span>' + (ok ? '학교 서버' : S.disconnected ? '서버에서 연결 해제됨' : '서버 연결 끊김') + '</span>');
     const net = S.sys && S.sys.network;
     if (net) {
       if (!net.connected) st.push('<span class="st bad">' + ic('wifiOff') + '네트워크 없음</span>');
@@ -795,6 +795,7 @@
     weather: { name: '날씨', render: renderWeatherApp },
     board: { name: '칠판', render: renderBoardApp, full: true },
     memo: { name: '화면 메모', open: () => native('memo') },
+    alerts: { name: '학급 알림', open: () => { if (N && N.alertPanel) native('alertPanel'); else { S.setSection = 'alerts'; openApp('settings'); } } },
     browser: { name: '인터넷', open: openSearch },
     capture: { name: '화면 캡처', open: () => native('capture', false) },
     record: { name: '화면 녹화', open: () => { native('capture', true); setTimeout(pollSys, 1500); } },
@@ -806,7 +807,7 @@
     drawer: { name: '모든 앱', render: renderDrawer, hidden: true },
     settings: { name: '설정', render: renderSettings },
   };
-  const DEFAULT_DOCK = ['timetable', 'meal', 'notices', 'board', 'browser'];
+  const DEFAULT_DOCK = ['timetable', 'meal', 'notices', 'board', 'alerts'];
   const PER_PAGE = 16;
   let androidApps = null;
 
@@ -1173,6 +1174,8 @@
     { type: 'notice', label: '전달사항 있습니다', sub: '앞을 봐 주세요', icon: 'megaphone', color: 'teal', c: '#14a3a3', sound: 'soft' },
   ];
   function fireClassAlert(a) {
+    if (N && N.classAlert && a.type) { native('classAlert', a.type); return; }
+    if (S.seg.type === 'class') { toast('수업 중에는 학급 알림을 보낼 수 없습니다'); return; }
     const st = settings();
     if (st.classAlerts === false) { toast('설정에서 학급 알림이 꺼져 있습니다'); return; }
     const cool = (st.alertCooldown || 10) * 1000;
@@ -1464,7 +1467,10 @@
         '<button class="btn sm" data-rm="' + i + '">빼기</button></div>').join('') +
         '<div class="set-row" style="display:block"><div class="lb" style="margin-bottom:.8rem"><b>추가할 앱</b><span>누르면 하단에 들어갑니다. 홈 화면에서 아이콘을 길게 눌러도 됩니다.</span></div><div class="pick-grid">' +
         all.filter((id) => dock.indexOf(id) < 0).map((id) => '<button class="pick" data-add="' + esc(id) + '">' + tileFor(id) + '<span>' + esc(appLabel(id)) + '</span></button>').join('') + '</div></div>' +
-        row('기본값으로', '시간표, 급식, 가정통신문, 칠판, 인터넷', '<button class="btn sm" id="dock-reset">되돌리기</button>')) +
+        row('기본값으로', '시간표, 급식, 가정통신문, 칠판, 학급 알림', '<button class="btn sm" id="dock-reset">되돌리기</button>')) +
+      group('수업 시작 전 알림', row('알림 켜기', '수업이 시작되기 전에 다음 교시와 과목을 화면에 띄웁니다. 수업 중과 수업이 끝날 때는 알리지 않습니다', sw('pc-on', h.preClass !== false)) +
+        row('몇 분 전', '', '<div class="tabs">' + [1, 2, 3, 5].map((m) => '<button data-pcm="' + m + '" class="' + ((h.preClassMin || 2) === m ? 'on' : '') + '">' + m + '분</button>').join('') + '</div>') +
+        row('알림음', '', sw('pc-snd', h.preClassSound !== false))) +
       group('검색', row('검색 엔진', '홈 화면 검색창과 인터넷 앱', '<div class="tabs">' + Object.keys(ENGINES).map((k) => '<button data-eng="' + k + '" class="' + ((h.search || 'naver') === k ? 'on' : '') + '">' + ENGINES[k][0] + '</button>').join('') + '</div>')) +
       group('성능', row('저사양 모드', '애니메이션과 그림자를 끄고 화면을 덜 자주 다시 그립니다' + (p ? ' · 이 기기: 메모리 ' + Math.round(p.totalMem / 1073741824 * 10) / 10 + 'GB, 코어 ' + p.cores + '개' : ''),
         '<div class="tabs">' + [['auto', '자동' + (liteAuto() ? '(켜짐)' : '(꺼짐)')], ['on', '켜기'], ['off', '끄기']].map((x) => '<button data-lite="' + x[0] + '" class="' + ((h.lite || 'auto') === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>'));
@@ -1473,6 +1479,9 @@
     C.$$('[data-rm]', c).forEach((b) => { b.onclick = () => { const n = dock.slice(); n.splice(Number(b.dataset.rm), 1); set(n); }; });
     C.$$('[data-add]', c).forEach((b) => { b.onclick = () => { if (dock.length >= 6) { toast('하단에는 앱을 6개까지 둘 수 있습니다'); return; } set(dock.concat([b.dataset.add])); }; });
     $('#dock-reset').onclick = () => set(DEFAULT_DOCK.slice());
+    $('#pc-on').onchange = (e) => saveHome({ preClass: e.target.checked });
+    $('#pc-snd').onchange = (e) => saveHome({ preClassSound: e.target.checked });
+    C.$$('[data-pcm]', c).forEach((b) => { b.onclick = () => saveHome({ preClassMin: Number(b.dataset.pcm) }).then(() => renderSettings()); });
     C.$$('[data-eng]', c).forEach((b) => { b.onclick = () => saveHome({ search: b.dataset.eng }).then(() => renderSettings()); });
     C.$$('[data-lite]', c).forEach((b) => { b.onclick = () => saveHome({ lite: b.dataset.lite }).then(() => { applyLite(); renderSettings(); }); });
   }
@@ -1502,12 +1511,21 @@
     const cv = $('#bb-c');
     const ctx = cv.getContext('2d', { desynchronized: true });
     const dpr = S.lite ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
+    // Sizes come from layout (clientWidth), not getBoundingClientRect: the app window opens with a zoom
+    // animation, and measuring the scaled box made strokes land below the finger.
     const fit = () => {
-      const r = cv.getBoundingClientRect();
-      cv.width = Math.round(r.width * dpr);
-      cv.height = Math.round(r.height * dpr);
+      if (!cv.isConnected) return;
+      const w = cv.clientWidth, h = cv.clientHeight;
+      if (cv.width === Math.round(w * dpr) && cv.height === Math.round(h * dpr)) return;
+      cv.width = Math.round(w * dpr);
+      cv.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       redraw();
+    };
+    const at = (e) => {
+      const r = cv.getBoundingClientRect();
+      const sx = cv.clientWidth / (r.width || 1), sy = cv.clientHeight / (r.height || 1);
+      return [(e.clientX - r.left) * sx, (e.clientY - r.top) * sy];
     };
     const widths = () => [3, 6, 12][BB.size];
     const styleFor = (st) => {
@@ -1538,8 +1556,8 @@
     const live = {};
     cv.addEventListener('pointerdown', (e) => {
       cv.setPointerCapture(e.pointerId);
-      const r = cv.getBoundingClientRect();
-      const st = { c: bg.ink[BB.color], w: widths(), erase: BB.eraser, pts: [e.clientX - r.left, e.clientY - r.top] };
+      fit();
+      const st = { c: bg.ink[BB.color], w: widths(), erase: BB.eraser, pts: at(e) };
       live[e.pointerId] = st;
       BB.pages[BB.page].push(st);
       drawStroke(st, 0);
@@ -1547,10 +1565,9 @@
     cv.addEventListener('pointermove', (e) => {
       const st = live[e.pointerId];
       if (!st) return;
-      const r = cv.getBoundingClientRect();
       const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
       const from = st.pts.length;
-      (evs.length ? evs : [e]).forEach((x) => { st.pts.push(x.clientX - r.left, x.clientY - r.top); });
+      (evs.length ? evs : [e]).forEach((x) => { const p = at(x); st.pts.push(p[0], p[1]); });
       drawStroke(st, from);
     });
     const end = (e) => { delete live[e.pointerId]; };
@@ -1575,6 +1592,7 @@
     });
     requestAnimationFrame(fit);
     setTimeout(fit, 60);
+    setTimeout(fit, 500); // after the window's opening animation
   }
   function saveBoard(cv) {
     const out = document.createElement('canvas');
@@ -1673,6 +1691,7 @@
     $('#ca-send').onclick = () => {
       const t = $('#ca-text').value.trim();
       if (!t) { toast('띄울 문구를 입력하세요'); return; }
+      if (S.seg.type === 'class') { toast('수업 중에는 학급 알림을 보낼 수 없습니다'); return; }
       fireClassAlert({ label: t, sub: '', icon: 'megaphone', color: 'violet', sound: 'soft' });
     };
     $('#ca-save').onclick = () => saveSettings({ classAlerts: $('#ca-on').checked, alertSound: $('#ca-sound').checked, alertSeconds: Math.max(3, Number($('#ca-sec').value) || 8), alertCooldown: Math.max(0, Number($('#ca-cool').value) || 0) });
@@ -1708,7 +1727,7 @@
     c.innerHTML = '<h1>자동 실행 · 절전</h1>' +
       group('절전', row('일과 시간 외 화면 끄기', '기기 관리자 권한이 있으면 화면을 잠급니다', sw('pw', pw.enabled)) +
         row('켜짐', '', '<input id="pw-on" type="time" value="' + esc(pw.on || '07:30') + '" style="width:12rem">') + row('꺼짐', '', '<input id="pw-off" type="time" value="' + esc(pw.off || '17:30') + '" style="width:12rem">') +
-        row('주말에도 켜기', '', sw('pw-we', pw.weekends)) + row('수업 종료 시 초기화', '화면 메모 지우기, 홈으로', sw('reset', st.resetOnEnd !== false)) +
+        row('주말에도 켜기', '', sw('pw-we', pw.weekends)) + row('수업 종료 시 초기화', '수업이 끝나면 화면 메모를 지우고 홈으로 (기본 꺼짐)', sw('reset', st.resetOnEnd === true)) +
         row('다른 앱 위 탐색 버튼', '뒤로 · 홈 · 최근 앱 막대', sw('fnav', st.floatingNav !== false)) + row('', '', '<button class="btn pri" id="pw-save">' + ic('check') + '저장</button>')) +
       group('수업 시작 시 자동 실행 앱', (rules.length ? rules.map((r, i) => row((r.period ? r.period + '교시' : '모든 교시') + (r.dow ? ' · ' + C.DOW[r.dow - 1] + '요일' : ''), esc((apps.find((a) => a.pkg === r.pkg) || { label: r.pkg }).label), '<button class="btn sm" data-del-rule="' + i + '">' + ic('trash') + '</button>')).join('') : row('규칙 없음', '', '')) +
         '<div class="set-row"><select id="r-p"><option value="0">모든 교시</option>' + [1, 2, 3, 4, 5, 6, 7].map((p) => '<option value="' + p + '">' + p + '교시</option>').join('') + '</select>' +
