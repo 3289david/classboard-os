@@ -1527,7 +1527,7 @@
       '<button class="bb-t" data-t="next">' + (BB.page === BB.pages.length - 1 ? ic('plus') : ic('right')) + '</button>' +
       '<button class="bb-t" data-t="save">저장</button><button class="bb-t" data-t="close">' + ic('x') + '</button></div></div>';
     const cv = $('#bb-c');
-    const ctx = cv.getContext('2d', { desynchronized: true });
+    const ctx = cv.getContext('2d');
     const dpr = S.lite ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
     // Sizes come from layout (clientWidth), not getBoundingClientRect: the app window opens with a zoom
     // animation, and measuring the scaled box made strokes land below the finger.
@@ -1571,26 +1571,45 @@
       ctx.restore();
       BB.pages[BB.page].forEach((st) => drawStroke(st, 0));
     }
+    // Input: pointer events where the board's WebView has them, touch events otherwise. Nothing here may throw,
+    // or a stroke never starts (setPointerCapture fails on some WebViews).
     const live = {};
-    cv.addEventListener('pointerdown', (e) => {
-      cv.setPointerCapture(e.pointerId);
+    const start = (id, x) => {
       fit();
-      const st = { c: bg.ink[BB.color], w: widths(), erase: BB.eraser, pts: at(e) };
-      live[e.pointerId] = st;
+      const st = { c: bg.ink[BB.color], w: widths(), erase: BB.eraser, pts: at(x) };
+      live[id] = st;
       BB.pages[BB.page].push(st);
       drawStroke(st, 0);
-    });
-    cv.addEventListener('pointermove', (e) => {
-      const st = live[e.pointerId];
+    };
+    const move = (id, list) => {
+      const st = live[id];
       if (!st) return;
-      const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
       const from = st.pts.length;
-      (evs.length ? evs : [e]).forEach((x) => { const p = at(x); st.pts.push(p[0], p[1]); });
+      list.forEach((x) => { const p = at(x); st.pts.push(p[0], p[1]); });
       drawStroke(st, from);
-    });
-    const end = (e) => { delete live[e.pointerId]; };
-    cv.addEventListener('pointerup', end);
-    cv.addEventListener('pointercancel', end);
+    };
+    const end = (id) => { delete live[id]; };
+    if (window.PointerEvent) {
+      cv.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        e.preventDefault();
+        try { cv.setPointerCapture(e.pointerId); } catch (x) { /* drawing works without capture */ }
+        start(e.pointerId, e);
+      });
+      cv.addEventListener('pointermove', (e) => {
+        if (!live[e.pointerId]) return;
+        e.preventDefault();
+        let evs = [];
+        try { evs = e.getCoalescedEvents ? e.getCoalescedEvents() : []; } catch (x) { evs = []; }
+        move(e.pointerId, evs.length ? evs : [e]);
+      });
+      ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((n) => cv.addEventListener(n, (e) => end(e.pointerId)));
+    } else {
+      const each = (e, f) => { e.preventDefault(); for (let i = 0; i < e.changedTouches.length; i++) f(e.changedTouches[i]); };
+      cv.addEventListener('touchstart', (e) => each(e, (t) => start('t' + t.identifier, t)), { passive: false });
+      cv.addEventListener('touchmove', (e) => each(e, (t) => move('t' + t.identifier, [t])), { passive: false });
+      ['touchend', 'touchcancel'].forEach((n) => cv.addEventListener(n, (e) => each(e, (t) => end('t' + t.identifier)), { passive: false }));
+    }
     C.$$('[data-ink]', body).forEach((b) => { b.onclick = () => { BB.color = Number(b.dataset.ink); BB.eraser = false; renderBoardApp(); }; });
     C.$$('[data-size]', body).forEach((b) => { b.onclick = () => { BB.size = Number(b.dataset.size); renderBoardApp(); }; });
     C.$$('[data-t]', body).forEach((b) => {
