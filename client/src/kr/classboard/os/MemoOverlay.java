@@ -73,7 +73,7 @@ class MemoOverlay {
         barLp = base(bar.w, bar.h, 0);
         barLp.gravity = Gravity.TOP | Gravity.START;
         barLp.x = (m.widthPixels - bar.w) / 2;
-        barLp.y = m.heightPixels - bar.h - (int) dp(256); // above the board's own dock and page dots
+        barLp.y = m.heightPixels - bar.h - (int) dp(285); // above the board's own dock and page dots
         try {
             wm.addView(bar, barLp);
         } catch (Exception e) {
@@ -119,7 +119,7 @@ class MemoOverlay {
         Toolbar(Context c, int screenW) {
             super(c);
             int slots = COLORS.length + TOOLS.length;
-            float want = dp(21);
+            float want = dp(35);
             pad = dp(4);
             grip = dp(14);
             // shrink buttons on narrow screens so the whole bar always fits

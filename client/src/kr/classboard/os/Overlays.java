@@ -383,7 +383,7 @@ public class Overlays {
             bar.setGravity(Gravity.CENTER);
             bar.setPadding(dp(14), dp(4), dp(14), dp(4));
             bar.setBackground(rounded(0xCC15181E, dp(26)));
-            for (String a : new String[]{"back", "home", "recents", "memo", "alert"}) {
+            for (String a : new String[]{"back", "home", "recents", "memo"}) {
                 NavKey k = new NavKey(ctx, a);
                 LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(dp(64), dp(48));
                 l.setMargins(dp(6), 0, dp(6), 0);
