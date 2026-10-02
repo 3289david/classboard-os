@@ -394,23 +394,6 @@ public class CoreService extends Service {
         return lastSegment.startsWith("class");
     }
 
-    private long lastClassAlert;
-
-    /** Class alerts from the quick panel or the board: not twice within the wait time. */
-    public String fireClassAlert(String type) {
-        JSONObject st = cfg.settings();
-        if (!st.optBoolean("classAlerts", true)) return "학급 알림이 꺼져 있습니다 (설정 → 학급 알림)";
-        long cool = st.optInt("alertCooldown", 10) * 1000L;
-        long left = cool - (System.currentTimeMillis() - lastClassAlert);
-        if (left > 0) return ((left + 999) / 1000) + "초 후에 다시 보낼 수 있습니다";
-        lastClassAlert = System.currentTimeMillis();
-        String[] t = classAlertText(type);
-        boolean quiet = "quiet".equals(type);
-        if (st.optBoolean("alertSound", true)) Chime.play(quiet ? "quiet" : "soft");
-        overlays.showClassAlert(t[0], t[1], Integer.parseInt(t[2]), Math.max(3, st.optInt("alertSeconds", 8)), quiet);
-        return null;
-    }
-
     private void onClassStart(JSONObject settings, JSONObject st, int period) {
         JSONArray rules = settings.optJSONArray("launchRules");
         int dow = Calendar.getInstance(Util.KST).get(Calendar.DAY_OF_WEEK);
@@ -464,9 +447,6 @@ public class CoreService extends Service {
                 break;
             case "memo":
                 overlays.toggleMemo();
-                break;
-            case "alert":
-                overlays.toggleAlertPanel(this::fireClassAlert);
                 break;
             case "back":
             case "recents":

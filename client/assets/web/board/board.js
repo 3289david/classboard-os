@@ -185,6 +185,7 @@
       case 'perms': if (S.panel === 'settings') renderSettings(); pollSys(); break;
       case 'folder': if (S.panel === 'files') renderFiles(); break;
       case 'storage': onStorage(data || {}); break;
+      case 'classAlert': { const a = ALERTS.find((x) => x.type === (data && data.type)); if (a) fireClassAlert(a); break; }
       case 'capture':
         if (!data.ok) toast(data.error || '캡처 실패', 5000);
         else if (data.kind === 'shot') toast('화면을 저장했습니다: ' + (data.where || ''));
@@ -1174,7 +1175,6 @@
     { type: 'notice', label: '전달사항 있습니다', sub: '앞을 봐 주세요', icon: 'megaphone', color: 'teal', c: '#14a3a3', sound: 'soft' },
   ];
   function fireClassAlert(a) {
-    if (N && N.classAlert && a.type) { native('classAlert', a.type); return; }
     const st = settings();
     if (st.classAlerts === false) { toast('설정에서 학급 알림이 꺼져 있습니다'); return; }
     const cool = (st.alertCooldown || 10) * 1000;

@@ -489,23 +489,17 @@ public class NativeBridge {
 
     // ---------------------------------------------------------------- tools
 
-    /** The class alert panel (works over any app). */
+    /** The 학급 알림 panel; each button runs the board's own class alert (same as 설정 → 학급 알림). */
     @JavascriptInterface
     public String alertPanel() {
         CoreService cs = CoreService.get();
         if (cs == null) return err("서비스가 실행 중이 아닙니다");
         if (!cs.overlays().allowed()) return err("학급 알림 창을 띄우려면 '다른 앱 위에 표시' 권한이 필요합니다");
-        cs.overlays().toggleAlertPanel(cs::fireClassAlert);
+        cs.overlays().toggleAlertPanel(type -> {
+            MainActivity.notifyWeb("classAlert", Util.jo("type", type).toString());
+            return null;
+        });
         return ok();
-    }
-
-    /** Fire a class alert from the board itself (same rules as the panel). */
-    @JavascriptInterface
-    public String classAlert(String type) {
-        CoreService cs = CoreService.get();
-        if (cs == null) return err("서비스가 실행 중이 아닙니다");
-        String why = cs.fireClassAlert(type);
-        return why == null ? ok() : err(why);
     }
 
     @JavascriptInterface
