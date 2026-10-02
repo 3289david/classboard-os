@@ -27,9 +27,11 @@ public class ServerApi {
     private long lastPersist;
 
     private final DocService docs;
+    private final java.io.File appFile;
 
     public ServerApi(Store store, Store devices, DataFetcher fetcher, String statusKey, java.io.File dataDir) {
         this.docs = new DocService(dataDir);
+        this.appFile = new java.io.File(new java.io.File(dataDir, "app"), "ClassBoardOS.apk");
         this.store = store;
         this.devices = devices;
         this.fetcher = fetcher;
@@ -62,6 +64,12 @@ public class ServerApi {
             case "/admin/disconnect":
             case "/admin/allow":
                 return admin(r);
+            case "/admin/app":
+                return appUpload(r);
+            case "/api/app/info":
+                return appInfo();
+            case "/api/app/apk":
+                return appApk();
             case "/api/shared":
                 return shared(r);
             case "/api/device/hello":
@@ -95,7 +103,8 @@ public class ServerApi {
         if (id == null || id.isEmpty() || id.length() > 64) return;
         if (blocked(id)) throw gone();
         String name = r.header("x-device-name");
-        seen.put(id, Util.jo("at", now(), "name", name == null ? "" : URLDecoder.decode(name, "UTF-8")));
+        String ver = r.header("x-app-version");
+        seen.put(id, Util.jo("at", now(), "name", name == null ? "" : URLDecoder.decode(name, "UTF-8"), "version", ver == null ? "" : ver));
         if (now() - lastPersist > 5 * 60_000L) {
             lastPersist = now();
             // Persist last-seen times occasionally (does not change the state revision boards watch).
@@ -103,6 +112,7 @@ public class ServerApi {
                 for (Map.Entry<String, JSONObject> e : seen.entrySet()) {
                     JSONObject d = Util.obj(root, e.getKey());
                     Util.put(d, "lastSeen", e.getValue().optLong("at"));
+                    if (!e.getValue().optString("version").isEmpty()) Util.put(d, "version", e.getValue().optString("version"));
                 }
             });
         }
@@ -348,6 +358,74 @@ public class ServerApi {
         return res;
     }
 
+    // ------------------------------------------------------------------ board app updates
+
+    private JSONObject appMeta() throws Exception {
+        if (!appFile.isFile()) return null;
+        java.io.File meta = new java.io.File(appFile.getPath() + ".json");
+        String m = Util.readFile(meta);
+        if (m != null) {
+            JSONObject o = new JSONObject(m);
+            if (o.optLong("size") == appFile.length() && o.optLong("mtime") == appFile.lastModified()) return o;
+        }
+        // a file copied into data/app by hand: work out its hash once
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+        try (java.io.InputStream in = new java.io.FileInputStream(appFile)) {
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) md.update(buf, 0, n);
+        }
+        JSONObject o = Util.jo("sha256", Util.hex(md.digest()), "size", appFile.length(), "mtime", appFile.lastModified(), "uploadedAt", appFile.lastModified());
+        Util.writeFileAtomic(meta, o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return o;
+    }
+
+    private Response appInfo() throws Exception {
+        JSONObject o = appMeta();
+        if (o == null) throw new ApiException(404, "올려 둔 전자칠판 앱이 없습니다");
+        return Response.json(Util.jo("sha256", o.optString("sha256"), "size", o.optLong("size"), "uploadedAt", o.optLong("uploadedAt")));
+    }
+
+    private Response appApk() throws Exception {
+        if (!appFile.isFile()) throw new ApiException(404, "올려 둔 전자칠판 앱이 없습니다");
+        Response res = Response.file(appFile, "application/vnd.android.package-archive");
+        res.headers.put("Content-Disposition", "attachment; filename=ClassBoardOS.apk");
+        return res;
+    }
+
+    /** New board app from the status page (STATUS_KEY). Boards pick it up and install it themselves. */
+    private Response appUpload(Request r) throws Exception {
+        if (!"POST".equals(r.method)) throw new ApiException(405, "POST만 됩니다");
+        if (statusKey.isEmpty()) throw new ApiException(403, "STATUS_KEY를 설정해야 앱을 올릴 수 있습니다");
+        if (!statusKey.equals(r.param("key"))) throw new ApiException(401, "상태 페이지 키가 맞지 않습니다");
+        byte[] b = r.body();
+        if (b.length < 1024 || b[0] != 'P' || b[1] != 'K') throw new ApiException(400, "APK 파일이 아닙니다");
+        appFile.getParentFile().mkdirs();
+        Util.writeFileAtomic(appFile, b);
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+        JSONObject o = Util.jo("sha256", Util.hex(md.digest(b)), "size", (long) b.length, "mtime", appFile.lastModified(), "uploadedAt", now());
+        Util.writeFileAtomic(new java.io.File(appFile.getPath() + ".json"), o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return Response.json(Util.jo("ok", true, "size", b.length));
+    }
+
+    private String appSection(boolean canAdmin) {
+        JSONObject m;
+        try {
+            m = appMeta();
+        } catch (Exception e) {
+            m = null;
+        }
+        String info = m == null ? "올려 둔 앱이 없습니다." : "올린 앱: " + (m.optLong("size") / 1024) + "KB · " + ago(m.optLong("uploadedAt")) + " · " + m.optString("sha256").substring(0, 12);
+        String form = !canAdmin ? "<p class=n>앱을 올리려면 서버에 STATUS_KEY를 설정하세요.</p>"
+                : "<p style='margin:10px 0 0'><input type=file id=apk accept='.apk' onclick='busy=true' onchange='up(this)'> <span id=upmsg class=n></span></p>"
+                + "<script>function up(i){var f=i.files[0];if(!f)return;busy=true;var m=document.getElementById('upmsg');m.textContent='올리는 중...';"
+                + "fetch('/admin/app?key='+encodeURIComponent('" + esc(statusKey).replace("'", "") + "'),{method:'POST',body:f}).then(function(r){return r.json()})"
+                + ".then(function(d){if(d.ok){m.textContent='올렸습니다. 전자칠판이 30분 안에 받아서 설치합니다.';setTimeout(function(){location.reload()},2500)}else{m.textContent=d.error;busy=false}})"
+                + ".catch(function(e){m.textContent=String(e);busy=false})}</script>";
+        return "<section><h2>전자칠판 앱 업데이트</h2><p style='margin:0'>" + esc(info) + "</p>" + form
+                + "<p class=n>새 ClassBoardOS.apk를 올리면, 전자칠판이 버전을 확인해 더 새 버전일 때만 수업 시간이 아닐 때 설치합니다.</p></section>";
+    }
+
     // ------------------------------------------------------------------ status page
 
     private static String esc(String s) {
@@ -400,7 +478,7 @@ public class ServerApi {
             if (on) online++;
             String cls = dv.optString("cls");
             devs.append("<tr><td>").append(esc(dv.optString("name"))).append("</td><td>").append(cls.isEmpty() ? "-" : esc(cls.replace("-", "학년 ") + "반"))
-                    .append("</td><td>").append(esc(dv.optString("version"))).append("</td><td class=").append(on ? "on" : "off").append(">")
+                    .append("</td><td>").append(esc(s != null && !s.optString("version").isEmpty() ? s.optString("version") : dv.optString("version"))).append("</td><td class=").append(on ? "on" : "off").append(">")
                     .append(on ? "연결됨" : ago(last)).append("</td><td>");
             if (canAdmin) {
                 devs.append("<form method=post action='/admin/disconnect' onsubmit=\"return confirm('")
@@ -423,7 +501,7 @@ public class ServerApi {
         }
         String school = Util.obj(cfg, "school").optString("name");
         String html = "<!doctype html><html lang=ko><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-                + "<title>" + esc(school) + " 전자칠판 서버</title><meta http-equiv=refresh content=30><style>"
+                + "<title>" + esc(school) + " 전자칠판 서버</title><style>"
                 + "body{font-family:'Pretendard','Noto Sans KR','Malgun Gothic',system-ui,sans-serif;background:#0e1116;color:#eef2f7;margin:0;padding:32px}"
                 + "h1{margin:0 0 4px;font-size:26px}p.s{color:#a9b4c3;margin:0 0 24px}section{background:#1a2029;border-radius:14px;padding:18px 20px;margin-bottom:16px;max-width:760px}"
                 + "h2{font-size:16px;color:#a9b4c3;margin:0 0 10px}table{width:100%;border-collapse:collapse}td,th{padding:8px 6px;border-bottom:1px solid #2a3340;text-align:left;font-size:14px}"
@@ -435,6 +513,8 @@ public class ServerApi {
                 + "<section><h2>전자칠판</h2><table><tr><th>이름</th><th>학급</th><th>버전</th><th>상태</th><th></th></tr>" + devs + "</table>"
                 + (canAdmin ? "" : "<p class=n>연결 해제 버튼을 쓰려면 서버에 STATUS_KEY를 설정하세요.</p>") + "</section>"
                 + (blockedRows.length() > 0 ? "<section><h2>연결 해제된 전자칠판</h2><table>" + blockedRows + "</table></section>" : "")
+                + appSection(canAdmin)
+                + "<script>var busy=false;setInterval(function(){if(!busy)location.reload()},30000);</script>"
                 + "</body></html>";
         return Response.bytes(ServerMain.utf8(html), "text/html; charset=utf-8");
     }

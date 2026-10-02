@@ -288,6 +288,15 @@ public class Router implements HttpServer.Handler {
                 res.headers.put("Cache-Control", "max-age=3600");
                 return res;
             }
+            case "update": {
+                UpdateManager u = core.updates();
+                if (u == null) throw new ApiException(503, "서비스 준비 중");
+                if ("POST".equals(r.method)) {
+                    if (!r.isLocal()) throw new ApiException(403, "기기에서만 사용할 수 있습니다");
+                    new Thread(() -> u.check(true, core.inClass())).start();
+                }
+                return Response.json(u.status());
+            }
             case "home": {
                 if ("GET".equals(r.method)) return Response.json(cfg.home());
                 if (!r.isLocal()) throw new ApiException(403, "기기에서만 사용할 수 있습니다");

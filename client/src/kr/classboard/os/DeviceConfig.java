@@ -48,6 +48,10 @@ public class DeviceConfig {
         }
     }
 
+    SharedPreferences prefs() {
+        return sp;
+    }
+
     /** Home-screen preferences anyone at the board may change: dock apps, search engine, lite mode. */
     public JSONObject home() {
         try {
@@ -71,6 +75,7 @@ public class DeviceConfig {
         if (o.has("search") && o.optString("search").matches("naver|google|daum")) Util.put(h, "search", o.optString("search"));
         if (o.has("lite") && o.optString("lite").matches("auto|on|off")) Util.put(h, "lite", o.optString("lite"));
         if (o.has("preClass")) Util.put(h, "preClass", o.optBoolean("preClass"));
+        if (o.has("autoUpdate")) Util.put(h, "autoUpdate", o.optBoolean("autoUpdate"));
         if (o.has("preClassSound")) Util.put(h, "preClassSound", o.optBoolean("preClassSound"));
         if (o.has("preClassMin")) Util.put(h, "preClassMin", Math.max(1, Math.min(10, o.optInt("preClassMin", 2))));
         sp.edit().putString("home", h.toString()).apply();

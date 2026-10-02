@@ -163,12 +163,11 @@ public class Overlays {
         String fire(String type);
     }
 
-    static final String[][] ALERT_BUTTONS = {
-            {"quiet", "조용히 해주세요", "#3F51B5"}, {"ready", "수업 준비", "#EF6C00"},
-            {"clean", "청소 시작", "#2E7D32"}, {"notice", "전달사항 있습니다", "#00838F"}};
-
-    /** Small panel with the class alert buttons, shown over any app (from the 학급 알림 app or the bell key). */
-    public void toggleAlertPanel(AlertHandler h) {
+    /**
+     * Small panel with the class alert buttons. The buttons, their order and colours, and whether alerts are
+     * switched on all come from 설정 → 학급 알림 (spec: {enabled, items:[{type,label,sub,color}]}).
+     */
+    public void toggleAlertPanel(org.json.JSONObject spec, AlertHandler h) {
         ui.post(() -> {
             if (alertPanel != null) {
                 hideAlertPanelNow();
@@ -200,19 +199,43 @@ public class Overlays {
             msg.setTextSize(15);
             msg.setVisibility(View.GONE);
             box.addView(msg);
-            for (String[] b : ALERT_BUTTONS) {
-                TextView btn = new TextView(ctx);
-                btn.setText(b[1]);
-                btn.setTextColor(Color.WHITE);
-                btn.setTextSize(22);
-                btn.setTypeface(Typeface.DEFAULT_BOLD);
+            org.json.JSONArray items = spec.optJSONArray("items");
+            boolean enabled = spec.optBoolean("enabled", true);
+            if (!enabled) {
+                msg.setText("학급 알림이 꺼져 있습니다. 설정 → 학급 알림에서 켜세요.");
+                msg.setVisibility(View.VISIBLE);
+            }
+            for (int i = 0; enabled && items != null && i < items.length(); i++) {
+                org.json.JSONObject it = items.optJSONObject(i);
+                String type = it.optString("type");
+                LinearLayout btn = new LinearLayout(ctx);
+                btn.setOrientation(LinearLayout.VERTICAL);
                 btn.setGravity(Gravity.CENTER_VERTICAL);
-                btn.setPadding(dp(22), 0, dp(22), 0);
-                btn.setBackground(rounded(Color.parseColor(b[2]), dp(16)));
-                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64));
+                btn.setPadding(dp(20), dp(10), dp(20), dp(10));
+                int color;
+                try {
+                    color = Color.parseColor(it.optString("color", "#455A64"));
+                } catch (Exception e) {
+                    color = 0xFF455A64;
+                }
+                btn.setBackground(rounded(color, dp(16)));
+                TextView t1 = new TextView(ctx);
+                t1.setText(it.optString("label"));
+                t1.setTextColor(Color.WHITE);
+                t1.setTextSize(21);
+                t1.setTypeface(Typeface.DEFAULT_BOLD);
+                btn.addView(t1);
+                if (!it.optString("sub").isEmpty()) {
+                    TextView t2 = new TextView(ctx);
+                    t2.setText(it.optString("sub"));
+                    t2.setTextColor(0xD9FFFFFF);
+                    t2.setTextSize(13);
+                    btn.addView(t2);
+                }
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
                 l.topMargin = dp(10);
                 btn.setOnClickListener(v -> {
-                    String why = h.fire(b[0]);
+                    String why = h.fire(type);
                     if (why == null) hideAlertPanelNow();
                     else {
                         msg.setText(why);
@@ -223,6 +246,18 @@ public class Overlays {
                 });
                 box.addView(btn, l);
             }
+            // settings for 학급 알림 (custom text, sound, time) live in one place
+            TextView more = new TextView(ctx);
+            more.setText("학급 알림 설정 열기");
+            more.setTextColor(0xFFB7C3FF);
+            more.setTextSize(16);
+            more.setGravity(Gravity.CENTER);
+            more.setPadding(0, dp(14), 0, dp(4));
+            more.setOnClickListener(v -> {
+                h.fire("_settings");
+                hideAlertPanelNow();
+            });
+            box.addView(more);
             WindowManager.LayoutParams lp = params(false, false);
             lp.flags &= ~WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
             lp.gravity = Gravity.BOTTOM | Gravity.END;

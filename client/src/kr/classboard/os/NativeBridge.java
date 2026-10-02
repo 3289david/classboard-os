@@ -457,6 +457,7 @@ public class NativeBridge {
             case "writeSettings": i = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse(pkgUri)); break;
             case "accessibility": i = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS); break;
             case "appInfo": i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse(pkgUri)); break;
+            case "installApps": i = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse(pkgUri)); break;
             case "deviceAdmin":
                 i = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
                 i.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, new ComponentName(act, AdminReceiver.class));
@@ -491,11 +492,17 @@ public class NativeBridge {
 
     /** The 학급 알림 panel; each button runs the board's own class alert (same as 설정 → 학급 알림). */
     @JavascriptInterface
-    public String alertPanel() {
+    public String alertPanel(String specJson) {
         CoreService cs = CoreService.get();
         if (cs == null) return err("서비스가 실행 중이 아닙니다");
         if (!cs.overlays().allowed()) return err("학급 알림 창을 띄우려면 '다른 앱 위에 표시' 권한이 필요합니다");
-        cs.overlays().toggleAlertPanel(type -> {
+        org.json.JSONObject spec;
+        try {
+            spec = new org.json.JSONObject(specJson == null ? "{}" : specJson);
+        } catch (Exception e) {
+            spec = new org.json.JSONObject();
+        }
+        cs.overlays().toggleAlertPanel(spec, type -> {
             MainActivity.notifyWeb("classAlert", Util.jo("type", type).toString());
             return null;
         });

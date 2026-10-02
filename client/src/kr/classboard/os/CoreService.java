@@ -86,6 +86,9 @@ public class CoreService extends Service {
         exec.scheduleWithFixedDelay(() -> refreshData(false), 3, 60, TimeUnit.SECONDS);
         exec.scheduleWithFixedDelay(this::tick, 5, 10, TimeUnit.SECONDS);
         exec.scheduleWithFixedDelay(this::preClassTick, 7, 1, TimeUnit.SECONDS);
+        // app updates from the school server: first look after 2 minutes, then every 30 minutes
+        updates = new UpdateManager(this, cfg, sync);
+        exec.scheduleWithFixedDelay(() -> updates.check(false, inClass()), 120, 1800, TimeUnit.SECONDS);
         // USB drive plugged in or pulled out: the files app shows it right away
         android.content.IntentFilter media = new android.content.IntentFilter();
         media.addAction(Intent.ACTION_MEDIA_MOUNTED);
@@ -146,6 +149,12 @@ public class CoreService extends Service {
 
     public Overlays overlays() {
         return overlays;
+    }
+
+    private UpdateManager updates;
+
+    public UpdateManager updates() {
+        return updates;
     }
 
     public void onDeviceConfigChanged(boolean serverChanged) {
@@ -562,6 +571,7 @@ public class CoreService extends Service {
                 "bluetooth", Build.VERSION.SDK_INT < 31 || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED,
                 "microphone", checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED,
                 "allFiles", LocalFiles.access(this),
+                "installApps", Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls(),
                 "defaultHome", isHome);
     }
 }

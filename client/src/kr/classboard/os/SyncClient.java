@@ -63,24 +63,18 @@ public class SyncClient {
         return online;
     }
 
-    private volatile boolean useHttp;
-    private int httpsFailures;
 
     /**
      * Server base URL. If the https address keeps failing (e.g. no certificate yet), the same host is
      * tried over plain http; a successful https request switches back.
      */
     public String base() {
-        String u = cfg.hubUrl();
-        return useHttp && u.startsWith("https://") ? "http://" + u.substring(8) : u;
+        return cfg.hubUrl();
     }
 
     private void noteFailure() {
-        if (!cfg.hubUrl().startsWith("https://")) return;
-        if (++httpsFailures >= 2) {
-            useHttp = !useHttp;
-            httpsFailures = 0;
-        }
+        // Switching to plain http after failures made boards look offline: behind Cloudflare an http
+        // request only gets a redirect to https, which HttpURLConnection does not follow. Keep the address.
     }
 
     public JSONObject status() {
@@ -114,6 +108,7 @@ public class SyncClient {
                 c.setReadTimeout(30000);
                 c.setRequestProperty("X-Device-Id", cfg.deviceId());
                 c.setRequestProperty("X-Device-Name", URLEncoder.encode(cfg.name(), "UTF-8"));
+                c.setRequestProperty("X-App-Version", BuildInfo.VERSION);
                 int code = c.getResponseCode();
                 if (code == 410) {
                     // the school server removed this board: stop asking often, show it on screen
@@ -138,7 +133,6 @@ public class SyncClient {
                 boolean cameOnline = !online;
                 online = true;
                 if (cameOnline) wake();
-                httpsFailures = 0;
                 lastOk = System.currentTimeMillis();
                 lastError = "";
                 long newRev = o.optLong("rev", -1);

@@ -185,7 +185,17 @@
       case 'perms': if (S.panel === 'settings') renderSettings(); pollSys(); break;
       case 'folder': if (S.panel === 'files') renderFiles(); break;
       case 'storage': onStorage(data || {}); break;
-      case 'classAlert': { const a = ALERTS.find((x) => x.type === (data && data.type)); if (a) fireClassAlert(a); break; }
+      case 'update':
+        if (data && data.need === 'installApps') toast('자동 업데이트를 하려면 설정 → 권한에서 "앱 설치 허용"을 켜 주세요', 6000);
+        else if (data && data.installing) toast('새 버전을 설치합니다. 잠시 후 다시 시작됩니다', 6000);
+        else if (data && data.failed) toast('업데이트 설치 실패: ' + data.failed, 6000);
+        break;
+      case 'classAlert': {
+        if (data && data.type === '_settings') { S.setSection = 'alerts'; openApp('settings'); break; }
+        const a = ALERTS.find((x) => x.type === (data && data.type));
+        if (a) fireClassAlert(a);
+        break;
+      }
       case 'capture':
         if (!data.ok) toast(data.error || '캡처 실패', 5000);
         else if (data.kind === 'shot') toast('화면을 저장했습니다: ' + (data.where || ''));
@@ -796,7 +806,7 @@
     weather: { name: '날씨', render: renderWeatherApp },
     board: { name: '칠판', render: renderBoardApp, full: true },
     memo: { name: '화면 메모', open: () => native('memo') },
-    alerts: { name: '학급 알림', open: () => { if (N && N.alertPanel) native('alertPanel'); else { S.setSection = 'alerts'; openApp('settings'); } } },
+    alerts: { name: '학급 알림', open: openAlertPanel },
     browser: { name: '인터넷', open: openSearch },
     capture: { name: '화면 캡처', open: () => native('capture', false) },
     record: { name: '화면 녹화', open: () => { native('capture', true); setTimeout(pollSys, 1500); } },
@@ -1174,13 +1184,24 @@
     { type: 'ready', label: '수업 준비', sub: '교과서와 준비물을 책상 위에 꺼내 주세요', icon: 'book', color: 'orange', c: '#ff9f2e', sound: 'soft' },
     { type: 'notice', label: '전달사항 있습니다', sub: '앞을 봐 주세요', icon: 'megaphone', color: 'teal', c: '#14a3a3', sound: 'soft' },
   ];
+  // 학급 알림 app: the overlay panel shows exactly the alerts and on/off state of 설정 → 학급 알림
+  function openAlertPanel() {
+    if (!N || !N.alertPanel) { S.setSection = 'alerts'; openApp('settings'); return; }
+    const st = settings();
+    native('alertPanel', JSON.stringify({ enabled: st.classAlerts !== false, items: ALERTS.map((a) => ({ type: a.type, label: a.label, sub: a.sub, color: a.c })) }));
+  }
   function fireClassAlert(a) {
     const st = settings();
     if (st.classAlerts === false) { toast('설정에서 학급 알림이 꺼져 있습니다'); return; }
     const cool = (st.alertCooldown || 10) * 1000;
     if (Date.now() - S.lastAlertAt < cool) { toast(Math.ceil((cool - (Date.now() - S.lastAlertAt)) / 1000) + '초 후 다시 보낼 수 있습니다'); return; }
     S.lastAlertAt = Date.now();
-    if (N && st.alertSound !== false) N.chime(a.sound || 'soft');
+    if (N && st.alertSound !== false) {
+      N.chime(a.sound || 'soft');
+      // strong alerts (조용히 해주세요, or 직접 입력 sent that way) keep ringing while on screen
+      clearInterval(S.alertRing);
+      if (a.flash) S.alertRing = setInterval(() => { if ($('#class-alert').classList.contains('on')) N.chime(a.sound || 'quiet'); else clearInterval(S.alertRing); }, 2200);
+    }
     showClassAlert(a, st.alertSeconds || 8);
   }
   function showClassAlert(a, secs) {
@@ -1199,7 +1220,7 @@
     clearTimeout(showClassAlert._t);
     showClassAlert._t = setTimeout(hideClassAlert, secs * 1000);
   }
-  function hideClassAlert() { $('#class-alert').classList.remove('on', 'flash'); $('#edge-flash').classList.remove('on'); }
+  function hideClassAlert() { clearInterval(S.alertRing); $('#class-alert').classList.remove('on', 'flash'); $('#edge-flash').classList.remove('on'); }
 
   // ---------------------------------------------------------------- files: internal storage and USB drives
   const FS = { path: null, root: null };
@@ -1679,16 +1700,19 @@
     const st = settings();
     c.innerHTML = '<h1>학급 알림</h1><p class="muted" style="margin:-.6rem 0 1.4rem;font-size:1.1rem">누르면 이 전자칠판에 크게 표시됩니다.</p>' +
       '<div class="ca-grid">' + ALERTS.map((a, i) => '<button class="ca-btn" data-ca="' + i + '" style="--c:' + a.c + '">' + ic(a.icon) + '<div>' + esc(a.label) + '<span>' + esc(a.sub) + '</span></div></button>').join('') + '</div>' +
-      group('직접 입력', '<div class="set-row"><div class="lb" style="flex:1"><input id="ca-text" type="text" placeholder="예: 5분 뒤 강당으로 이동합니다" style="width:100%"></div><button class="btn pri" id="ca-send">' + ic('send') + '띄우기</button></div>') +
+      group('직접 입력', '<div class="set-row"><div class="lb" style="flex:1"><input id="ca-text" type="text" placeholder="예: 5분 뒤 강당으로 이동합니다" style="width:100%"></div><button class="btn pri" id="ca-send">' + ic('send') + '띄우기</button></div>' +
+        row('보내는 방식', '"조용히 해주세요처럼"은 화면이 깜빡이고 알림음이 계속 울립니다', '<div class="tabs" id="ca-style"><button data-st="normal" class="' + (S.customStyle === 'strong' ? '' : 'on') + '">보통</button><button data-st="strong" class="' + (S.customStyle === 'strong' ? 'on' : '') + '">조용히 해주세요처럼</button></div>')) +
       group('설정', row('학급 알림 사용', '', sw('ca-on', st.classAlerts !== false)) + row('알림음', '"조용히 해주세요"는 크게 울리는 벨', sw('ca-sound', st.alertSound !== false)) +
         row('표시 시간', '초', '<input type="number" id="ca-sec" min="3" max="60" value="' + (st.alertSeconds || 8) + '" style="width:8rem">') +
         row('다시 보내기 대기', '초 (연속으로 누르는 것 방지)', '<input type="number" id="ca-cool" min="0" max="120" value="' + (st.alertCooldown == null ? 10 : st.alertCooldown) + '" style="width:8rem">') +
         row('', '', '<button class="btn pri" id="ca-save">' + ic('check') + '저장</button>'));
     C.$$('[data-ca]', c).forEach((b) => { b.onclick = () => fireClassAlert(ALERTS[Number(b.dataset.ca)]); });
+    C.$$('#ca-style [data-st]', c).forEach((b) => { b.onclick = () => { S.customStyle = b.dataset.st; C.$$('#ca-style [data-st]', c).forEach((x) => x.classList.toggle('on', x === b)); }; });
     $('#ca-send').onclick = () => {
       const t = $('#ca-text').value.trim();
       if (!t) { toast('띄울 문구를 입력하세요'); return; }
-      fireClassAlert({ label: t, sub: '', icon: 'megaphone', color: 'violet', sound: 'soft' });
+      const strong = S.customStyle === 'strong';
+      fireClassAlert(strong ? { label: t, sub: '', icon: 'quiet', color: 'indigo', flash: true, sound: 'quiet' } : { label: t, sub: '', icon: 'megaphone', color: 'violet', sound: 'soft' });
     };
     $('#ca-save').onclick = () => saveSettings({ classAlerts: $('#ca-on').checked, alertSound: $('#ca-sound').checked, alertSeconds: Math.max(3, Number($('#ca-sec').value) || 8), alertCooldown: Math.max(0, Number($('#ca-cool').value) || 0) });
   }
@@ -1739,7 +1763,7 @@
       ['defaultHome', '기본 홈 앱', '전원을 켜면 이 화면이 바로 뜸', 'home'], ['overlay', '다른 앱 위에 표시', '화면 메모, 탐색 버튼', 'overlay'],
       ['writeSettings', '시스템 설정 변경', '밝기 조절', 'writeSettings'], ['accessibility', '접근성 서비스', '뒤로 · 최근 앱, 화면 분할', 'accessibility'],
       ['deviceAdmin', '기기 관리자', '일과 종료 후 화면 끄기', 'deviceAdmin'], ['notifications', '알림', '실행 상태 표시', 'notifications'],
-      ['location', '위치', 'Wi-Fi 이름 표시', 'location'], ['bluetooth', '블루투스', '연결된 기기 표시', 'bluetoothPerm'], ['microphone', '마이크', '화면 녹화 소리', 'microphone'], ['allFiles', '모든 파일 접근', '파일 앱 (내부 저장공간 · USB)', 'allFiles'],
+      ['location', '위치', 'Wi-Fi 이름 표시', 'location'], ['bluetooth', '블루투스', '연결된 기기 표시', 'bluetoothPerm'], ['microphone', '마이크', '화면 녹화 소리', 'microphone'], ['allFiles', '모든 파일 접근', '파일 앱 (내부 저장공간 · USB)', 'allFiles'], ['installApps', '앱 설치 허용', '자동 업데이트', 'installApps'],
     ];
     c.innerHTML = '<h1>권한</h1>' + group('', rows.map((p) => '<div class="set-row"><span class="dot' + (perms[p[0]] ? ' on' : '') + '"></span><div class="lb"><b>' + p[1] + '</b><span>' + p[2] + '</span></div><button class="btn sm" data-open="' + p[3] + '">' + (perms[p[0]] ? '설정' : '허용') + '</button></div>').join('')) +
       group('시스템', row('안드로이드 설정', '', '<button class="btn sm" data-open="settings">열기</button>') + row('날짜 · 시간', '', '<button class="btn sm" data-open="date">열기</button>') + row('앱 정보', '', '<button class="btn sm" data-open="appInfo">열기</button>'));
@@ -1753,8 +1777,14 @@
     c.innerHTML = '<h1>정보</h1>' + group('', row('중동중학교 전자칠판', '버전 ' + esc(d.version || ''), '') + row('학교 서버', esc((d.sync && d.sync.hubUrl) || d.hubUrl || ''), '') + row('기기 ID', esc(d.deviceId || ''), '')) +
       group('데이터', row('시간표', ttSource() || '없음', '') + row('급식', at('meals'), '') + row('학사일정', at('schedule'), '') + row('날씨', at('weather'), '') + row('홈페이지', at('homepage'), '') +
         Object.keys(errs).map((k) => row('오류: ' + esc(k), esc(errs[k].message), '')).join('') +
+        row('자동 업데이트', '학교 서버에 새 앱이 올라오면 수업 시간이 아닐 때 설치합니다', sw('au-on', !(S.device.home && S.device.home.autoUpdate === false))) +
+        row('업데이트 상태', '<span id="au-st">확인 중</span>', '<button class="btn sm" id="au-now">' + ic('refresh') + '지금 확인</button>') +
         row('새로고침', '지금 모든 데이터를 다시 받습니다', '<button class="btn sm" id="refresh">' + ic('refresh') + '새로고침</button>') +
         row('화면 다시 불러오기', '', '<button class="btn sm" id="reload">' + ic('reset') + '다시 불러오기</button>'));
+    const auShow = (u) => { const el = $('#au-st'); if (el) el.textContent = u.state + (u.lastCheck ? ' · ' + C.ago(u.lastCheck) + ' 확인' : '') + (u.canInstall ? '' : ' · 앱 설치 허용 필요'); };
+    C.get('/api/local/update').then(auShow).catch(() => {});
+    $('#au-on').onchange = (e) => saveHome({ autoUpdate: e.target.checked });
+    $('#au-now').onclick = async () => { try { auShow(await localPost('/api/local/update', {})); setTimeout(() => C.get('/api/local/update').then(auShow).catch(() => {}), 4000); } catch (e) { toast(e.message); } };
     $('#refresh').onclick = async () => { await C.post('/api/local/refresh', {}, pinHeaders()).catch(() => {}); toast('새로고침을 요청했습니다'); setTimeout(loadData, 5000); };
     $('#reload').onclick = () => { if (N) N.reload(); else location.reload(); };
   }
