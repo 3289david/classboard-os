@@ -317,8 +317,36 @@
   }
 
   // ---------------------------------------------------------------- home
+  // one line on the first home page: today's events, exams soon, lunch, timetable changes, new posts
+  function renderToday() {
+    const el = $('#c-today');
+    if (!el) return;
+    const items = [];
+    const today = C.today();
+    if (S.dataLoaded) {
+      allEvents().filter((e) => e.date <= today && (e.endDate || e.date) >= today && e.kind !== '시험').slice(0, 2)
+        .forEach((e) => items.push(['calendar', '오늘 ' + e.name, 'calendar']));
+      const ex = examItems()[0];
+      if (ex && ex.date <= C.addDays(today, 7)) items.push(['exam', ex.name + ' ' + examDday(ex), 'calendar']);
+      const changed = periodsOn(today).filter((e) => e.ch);
+      if (changed.length) items.push(['info', '시간표 변경 ' + changed.map((e) => e.p + '교시').join(', '), 'timetable']);
+      const md = mealDay();
+      const lunch = md.date === today && (md.list.find((x) => x.code === 2) || md.list[0]);
+      if (lunch) items.push(['meal', '급식 ' + lunch.dishes.slice(0, 3).map((d) => d.name).join(', '), 'meal']);
+      const fresh = homepageLatest(50).filter((it) => it.date >= C.addDays(today, -1)).length;
+      if (fresh) items.push(['file', '새 소식 ' + fresh + '건', 'notices']);
+    }
+    const h = items.length ? items.map((it) => '<button class="today-i" data-today="' + it[2] + '">' + ic(it[0]) + '<span>' + esc(it[1]) + '</span></button>').join('')
+      : '<span class="today-none">' + (S.dataLoaded ? '오늘 특별한 소식이 없습니다' : '') + '</span>';
+    if (el._h === h) return;
+    el._h = h;
+    el.innerHTML = h;
+    C.$$('[data-today]', el).forEach((b) => { b.onclick = (ev) => openApp(b.dataset.today, ev.currentTarget); });
+  }
+
   function renderHome() {
     renderNowCard();
+    renderToday();
     renderTimetable();
     renderNotices($('#c-notices'), true);
     renderMeals();
@@ -806,6 +834,7 @@
     weather: { name: '날씨', render: renderWeatherApp },
     board: { name: '칠판', render: renderBoardApp, full: true },
     memo: { name: '화면 메모', open: () => native('memo') },
+    pick: { name: '번호 뽑기', render: renderPickApp },
     alerts: { name: '학급 알림', open: openAlertPanel },
     browser: { name: '인터넷', open: openSearch },
     capture: { name: '화면 캡처', open: () => native('capture', false) },
@@ -1490,6 +1519,8 @@
         row('기본값으로', '시간표, 급식, 가정통신문, 칠판, 학급 알림', '<button class="btn sm" id="dock-reset">되돌리기</button>')) +
       group('수업 시작 전 알림', row('알림 켜기', '수업 시작 10초 전에 교시와 과목을 화면에 띄웁니다. 수업이 끝날 때는 알리지 않습니다', sw('pc-on', h.preClass !== false)) +
         row('알림음', '', sw('pc-snd', h.preClassSound !== false))) +
+      group('아침 자동 재시작', row('켜기', '오래 켜 둔 화면이 느려지지 않도록 매일 아침 한 번 앱을 다시 켭니다 (수업 중에는 하지 않음)', sw('mr-on', h.morningRestart !== false)) +
+        row('시각', '', '<div class="tabs">' + ['06:30', '07:00', '07:30', '08:00'].map((t) => '<button data-mr="' + t + '" class="' + ((h.restartAt || '07:00') === t ? 'on' : '') + '">' + t + '</button>').join('') + '</div>')) +
       group('검색', row('검색 엔진', '홈 화면 검색창과 인터넷 앱', '<div class="tabs">' + Object.keys(ENGINES).map((k) => '<button data-eng="' + k + '" class="' + ((h.search || 'naver') === k ? 'on' : '') + '">' + ENGINES[k][0] + '</button>').join('') + '</div>')) +
       group('성능', row('저사양 모드', '애니메이션과 그림자를 끄고 화면을 덜 자주 다시 그립니다' + (p ? ' · 이 기기: 메모리 ' + Math.round(p.totalMem / 1073741824 * 10) / 10 + 'GB, 코어 ' + p.cores + '개' : ''),
         '<div class="tabs">' + [['auto', '자동' + (liteAuto() ? '(켜짐)' : '(꺼짐)')], ['on', '켜기'], ['off', '끄기']].map((x) => '<button data-lite="' + x[0] + '" class="' + ((h.lite || 'auto') === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>'));
@@ -1499,35 +1530,221 @@
     C.$$('[data-add]', c).forEach((b) => { b.onclick = () => { if (dock.length >= 6) { toast('하단에는 앱을 6개까지 둘 수 있습니다'); return; } set(dock.concat([b.dataset.add])); }; });
     $('#dock-reset').onclick = () => set(DEFAULT_DOCK.slice());
     $('#pc-on').onchange = (e) => saveHome({ preClass: e.target.checked });
+    $('#mr-on').onchange = (e) => saveHome({ morningRestart: e.target.checked });
+    C.$$('[data-mr]', c).forEach((b) => { b.onclick = () => saveHome({ restartAt: b.dataset.mr }).then(() => renderSettings()); });
     $('#pc-snd').onchange = (e) => saveHome({ preClassSound: e.target.checked });
     C.$$('[data-eng]', c).forEach((b) => { b.onclick = () => saveHome({ search: b.dataset.eng }).then(() => renderSettings()); });
     C.$$('[data-lite]', c).forEach((b) => { b.onclick = () => saveHome({ lite: b.dataset.lite }).then(() => { applyLite(); renderSettings(); }); });
   }
 
-  // ---------------------------------------------------------------- 칠판 (blackboard)
-  const BB_BG = {
-    green: { name: '칠판', fill: '#264c3a', ink: ['#f7f7f2', '#ffe066', '#ff9fb2', '#8fd0ff', '#b6e36b'] },
-    black: { name: '흑판', fill: '#1d2024', ink: ['#f7f7f2', '#ffe066', '#ff9fb2', '#8fd0ff', '#b6e36b'] },
-    white: { name: '화이트보드', fill: '#fbfbf8', ink: ['#1f2328', '#2f6ae0', '#e0413a', '#1f9d5b', '#8a4fe0'] },
-  };
-  const BB = { bg: 'green', grid: false, pages: [[]], page: 0, color: 0, size: 1, eraser: false };
-  function renderBoardApp() {
+  // ---------------------------------------------------------------- 번호 뽑기
+  // Picks a number in a range; numbers already picked are left out until 다시 시작. Kept per class and day.
+  function pickState() {
+    let st = null;
+    try { st = JSON.parse(localStorage.getItem('cb_pick') || 'null'); } catch (e) { st = null; }
+    if (!st || st.day !== C.today()) st = { day: C.today(), min: (st && st.min) || 1, max: (st && st.max) || 30, picked: [], skip: (st && st.skip) || [] };
+    return st;
+  }
+  function pickSave(st) { try { localStorage.setItem('cb_pick', JSON.stringify(st)); } catch (e) { /* ignore */ } }
+  function renderPickApp() {
     const body = $('#p-body');
+    const st = pickState();
+    const pool = [];
+    for (let n = st.min; n <= st.max; n++) if (st.picked.indexOf(n) < 0 && st.skip.indexOf(n) < 0) pool.push(n);
+    body.innerHTML = '<div class="pick-app"><div class="pick-main"><div class="pick-num" id="pk-num">' + (st.picked.length ? st.picked[st.picked.length - 1] : '?') + '</div>' +
+      '<div class="pick-sub" id="pk-sub">' + (pool.length ? '남은 번호 ' + pool.length + '개' : '모든 번호를 뽑았습니다') + '</div>' +
+      '<div class="pick-btns"><button class="btn pri pick-go" id="pk-go"' + (pool.length ? '' : ' disabled') + '>뽑기</button><button class="btn" id="pk-reset">' + ic('reset') + '다시 시작</button></div></div>' +
+      '<div class="pick-side"><div class="section-t">' + ic('sliders') + '번호 범위</div><div class="pick-range"><input id="pk-min" type="number" min="1" max="99" value="' + st.min + '"><span>~</span><input id="pk-max" type="number" min="1" max="99" value="' + st.max + '"><button class="btn sm" id="pk-apply">적용</button></div>' +
+      '<div class="section-t">' + ic('check') + '뽑힌 번호 (' + st.picked.length + ')</div><div class="pick-chips">' + (st.picked.map((n) => '<span class="chip accent">' + n + '</span>').join('') || '<span class="dim">아직 없습니다</span>') + '</div>' +
+      '<div class="section-t">' + ic('x') + '빼고 뽑을 번호 (결석 등)</div><div class="pick-grid">' +
+      Array.from({ length: st.max - st.min + 1 }, (_, i) => st.min + i).map((n) => '<button class="pick-n' + (st.skip.indexOf(n) >= 0 ? ' off' : '') + (st.picked.indexOf(n) >= 0 ? ' done' : '') + '" data-n="' + n + '">' + n + '</button>').join('') + '</div></div></div>';
+    $('#pk-go').onclick = () => {
+      const cur = pickState();
+      const left = [];
+      for (let n = cur.min; n <= cur.max; n++) if (cur.picked.indexOf(n) < 0 && cur.skip.indexOf(n) < 0) left.push(n);
+      if (!left.length) return;
+      const result = left[Math.floor(Math.random() * left.length)];
+      cur.picked.push(result);
+      pickSave(cur);
+      const el = $('#pk-num');
+      $('#pk-go').disabled = true;
+      const done = () => { if (N) N.chime('soft'); renderPickApp(); const n = $('#pk-num'); if (n) n.classList.add('hit'); };
+      if (S.lite) { done(); return; }
+      // a short roll through the remaining numbers before the result
+      let i = 0;
+      const steps = 14;
+      const roll = () => {
+        if (!el.isConnected) return;
+        if (i++ >= steps) { done(); return; }
+        el.textContent = left[Math.floor(Math.random() * left.length)];
+        setTimeout(roll, 40 + i * 12);
+      };
+      roll();
+    };
+    $('#pk-reset').onclick = () => { const cur = pickState(); cur.picked = []; pickSave(cur); renderPickApp(); };
+    $('#pk-apply').onclick = () => {
+      const a = Math.max(1, Math.min(99, Number($('#pk-min').value) || 1)), b = Math.max(1, Math.min(99, Number($('#pk-max').value) || 30));
+      const cur = pickState();
+      cur.min = Math.min(a, b); cur.max = Math.max(a, b); cur.picked = []; cur.skip = cur.skip.filter((n) => n >= cur.min && n <= cur.max);
+      pickSave(cur);
+      renderPickApp();
+    };
+    C.$$('[data-n]', body).forEach((b) => {
+      b.onclick = () => {
+        const cur = pickState(), n = Number(b.dataset.n), i = cur.skip.indexOf(n);
+        if (i >= 0) cur.skip.splice(i, 1); else cur.skip.push(n);
+        pickSave(cur);
+        renderPickApp();
+      };
+    });
+  }
+
+  // ---------------------------------------------------------------- 칠판 (blackboard)
+  // Drawings are saved on this board per subject (수학, 과학 …; 자유 판서 outside lessons) and can be opened again later.
+  const BB_BG = {
+    green: { name: '칠판', fill: '#264c3a', grid: 'rgba(255,255,255,.10)', ink: ['#f7f7f2', '#ffe066', '#ff9fb2', '#8fd0ff', '#b6e36b'] },
+    black: { name: '흑판', fill: '#1d2024', grid: 'rgba(255,255,255,.10)', ink: ['#f7f7f2', '#ffe066', '#ff9fb2', '#8fd0ff', '#b6e36b'] },
+    white: { name: '화이트보드', fill: '#fbfbf8', grid: 'rgba(40,60,120,.14)', ink: ['#1f2328', '#2f6ae0', '#e0413a', '#1f9d5b', '#8a4fe0'] },
+  };
+  const GRID = [0, 24, 36, 56]; // 모눈: 끔, 작게, 보통, 크게 (px)
+  const TOOLS = [
+    ['pen', '펜', '<path d="M4 20l4-1L19 8l-3-3L5 16z"/>'],
+    ['line', '직선', '<path d="M4 20L20 4"/><circle cx="4" cy="20" r="1.6"/><circle cx="20" cy="4" r="1.6"/>'],
+    ['rect', '사각형', '<rect x="4" y="6" width="16" height="12" rx="1.5"/>'],
+    ['circle', '원', '<circle cx="12" cy="12" r="8"/>'],
+    ['eraser', '지우개', '<path d="M4 15l8-8 7 7-5 5H8z"/><path d="M9 20h11"/>'],
+  ];
+  const BB = { bg: 'green', grid: 0, pages: [[]], page: 0, color: 0, size: 1, tool: 'pen', subject: null, key: null, dirty: false };
+
+  function bbSubject() {
+    if (S.seg.type === 'class') { const e = entryFor(S.seg.slot.p); if (e && e.s) return { name: e.s, p: S.seg.slot.p }; }
+    return { name: '자유 판서', p: 0 };
+  }
+  function bbKeyFor(sub) {
+    let h = 0;
+    for (const ch of sub.name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return 's' + h.toString(36) + '_' + C.today().replace(/-/g, '') + '_' + sub.p;
+  }
+  function bbHasInk() { return BB.pages.some((p) => p.length); }
+  function bbData() {
+    return { subject: BB.subject, label: BB.subject, date: C.today(), bg: BB.bg, grid: BB.grid, pages: BB.pages,
+      pageCount: BB.pages.length, strokeCount: BB.pages.reduce((n, p) => n + p.length, 0) };
+  }
+  async function bbSave() {
+    if (!BB.key || !BB.dirty || !bbHasInk()) return;
+    BB.dirty = false;
+    try {
+      await fetch('/api/local/boards?key=' + BB.key, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bbData()) });
+    } catch (e) { BB.dirty = true; }
+  }
+  function bbChanged() {
+    BB.dirty = true;
+    clearTimeout(bbChanged._t);
+    bbChanged._t = setTimeout(bbSave, 2000);
+  }
+  async function bbList() {
+    try { return (await C.get('/api/local/boards')).items.sort((a, b) => b.savedAt - a.savedAt); } catch (e) { return []; }
+  }
+  async function bbLoad(key) {
+    await bbSave();
+    const d = await C.get('/api/local/boards?key=' + encodeURIComponent(key));
+    // continue writing in today's drawing for this subject; the old one stays as it was
+    BB.pages = d.pages && d.pages.length ? d.pages : [[]];
+    BB.page = 0;
+    BB.bg = BB_BG[d.bg] ? d.bg : BB.bg;
+    BB.grid = d.grid || 0;
+    BB.dirty = true;
+    bbSave();
+    renderBoardApp();
+    toast(d.subject + ' 판서를 불러왔습니다 (' + C.shortDate(d.date) + ')', 2500);
+  }
+
+  // one stroke: freehand {c,w,erase,pts} or shape {c,w,shape,x0,y0,x1,y1}
+  function drawStroke(ctx, st, from) {
+    ctx.globalCompositeOperation = st.erase ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = st.c;
+    ctx.lineWidth = st.erase ? st.w * 6 : st.w;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    if (st.shape) {
+      const x = Math.min(st.x0, st.x1), y = Math.min(st.y0, st.y1), w = Math.abs(st.x1 - st.x0), h = Math.abs(st.y1 - st.y0);
+      if (st.shape === 'line') { ctx.moveTo(st.x0, st.y0); ctx.lineTo(st.x1, st.y1); }
+      else if (st.shape === 'rect') ctx.rect(x, y, w, h);
+      else if (st.shape === 'circle') ctx.ellipse(x + w / 2, y + h / 2, Math.max(1, w / 2), Math.max(1, h / 2), 0, 0, Math.PI * 2);
+      ctx.stroke();
+      return;
+    }
+    const p = st.pts;
+    const i0 = Math.max(0, (from || 0) - 2);
+    ctx.moveTo(p[i0], p[i0 + 1]);
+    if (p.length === 2) ctx.lineTo(p[0] + 0.1, p[1] + 0.1);
+    for (let i = i0 + 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]);
+    ctx.stroke();
+  }
+  // a page as a picture (background, 모눈 and ink), for 사진 저장 and PDF
+  function bbRenderPage(strokes, w, h, scale, type) {
+    const layer = document.createElement('canvas');
+    layer.width = Math.round(w * scale);
+    layer.height = Math.round(h * scale);
+    const lc = layer.getContext('2d');
+    lc.setTransform(scale, 0, 0, scale, 0, 0);
+    strokes.forEach((st) => drawStroke(lc, st, 0));
+    const out = document.createElement('canvas');
+    out.width = layer.width;
+    out.height = layer.height;
+    const x = out.getContext('2d');
     const bg = BB_BG[BB.bg];
-    body.innerHTML = '<div class="bb bb-' + BB.bg + (BB.grid ? ' grid' : '') + '"><canvas id="bb-c"></canvas>' +
+    x.fillStyle = bg.fill;
+    x.fillRect(0, 0, out.width, out.height);
+    const g = GRID[BB.grid] * scale;
+    if (g) {
+      x.strokeStyle = bg.grid;
+      x.lineWidth = 1;
+      x.beginPath();
+      for (let gx = g; gx < out.width; gx += g) { x.moveTo(gx + 0.5, 0); x.lineTo(gx + 0.5, out.height); }
+      for (let gy = g; gy < out.height; gy += g) { x.moveTo(0, gy + 0.5); x.lineTo(out.width, gy + 0.5); }
+      x.stroke();
+    }
+    x.drawImage(layer, 0, 0);
+    return out.toDataURL(type || 'image/png', 0.85);
+  }
+
+  async function renderBoardApp() {
+    const body = $('#p-body');
+    // a new lesson (another subject) starts a new drawing; the previous one is already saved
+    const sub = bbSubject();
+    if (BB.subject !== sub.name || !BB.key) {
+      await bbSave();
+      if (BB.subject !== null && bbHasInk() && BB.subject !== sub.name) BB.pages = [[]];
+      BB.page = 0;
+      BB.subject = sub.name;
+      BB.key = bbKeyFor(sub);
+      BB.dirty = false;
+      BB.restore = true; // after an app restart, continue this lesson's saved drawing
+    }
+    const bg = BB_BG[BB.bg];
+    const svg = (d) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
+    body.innerHTML = '<div class="bb bb-' + BB.bg + (BB.grid ? ' grid' : '') + '" style="--g:' + GRID[BB.grid] + 'px"><canvas id="bb-c"></canvas><canvas id="bb-o"></canvas>' +
+      '<div class="bb-top"><b>' + esc(BB.subject) + '</b><span id="bb-last"></span></div>' +
       '<div class="bb-bar">' +
-      bg.ink.map((c, i) => '<button class="bb-ink' + (!BB.eraser && BB.color === i ? ' on' : '') + '" data-ink="' + i + '" style="--ink:' + c + '"></button>').join('') +
+      bg.ink.map((c, i) => '<button class="bb-ink' + (BB.tool !== 'eraser' && BB.color === i ? ' on' : '') + '" data-ink="' + i + '" style="--ink:' + c + '"></button>').join('') +
       '<i class="bb-sep"></i>' +
       [0, 1, 2].map((s) => '<button class="bb-size' + (BB.size === s ? ' on' : '') + '" data-size="' + s + '"><i style="width:' + [0.5, 0.9, 1.4][s] + 'rem;height:' + [0.5, 0.9, 1.4][s] + 'rem"></i></button>').join('') +
-      '<button class="bb-t' + (BB.eraser ? ' on' : '') + '" data-t="eraser">지우개</button><button class="bb-t" data-t="undo">되돌리기</button><button class="bb-t" data-t="clear">모두 지우기</button>' +
       '<i class="bb-sep"></i>' +
-      '<button class="bb-t" data-t="bg">' + bg.name + '</button><button class="bb-t' + (BB.grid ? ' on' : '') + '" data-t="grid">모눈</button>' +
+      TOOLS.map((t) => '<button class="bb-ic' + (BB.tool === t[0] ? ' on' : '') + '" data-tool="' + t[0] + '" title="' + t[1] + '">' + svg(t[2]) + '</button>').join('') +
+      '<button class="bb-t" data-t="undo">되돌리기</button><button class="bb-t" data-t="clear">지우기</button>' +
+      '<i class="bb-sep"></i>' +
+      '<button class="bb-t" data-t="bg">' + bg.name + '</button><button class="bb-t' + (BB.grid ? ' on' : '') + '" data-t="grid">모눈' + ['', ' 작게', ' 보통', ' 크게'][BB.grid] + '</button>' +
       '<i class="bb-sep"></i>' +
       '<button class="bb-t" data-t="prev"' + (BB.page === 0 ? ' disabled' : '') + '>' + ic('left') + '</button><span class="bb-pg">' + (BB.page + 1) + ' / ' + BB.pages.length + '</span>' +
       '<button class="bb-t" data-t="next">' + (BB.page === BB.pages.length - 1 ? ic('plus') : ic('right')) + '</button>' +
-      '<button class="bb-t" data-t="save">저장</button><button class="bb-t" data-t="close">' + ic('x') + '</button></div></div>';
-    const cv = $('#bb-c');
-    const ctx = cv.getContext('2d');
+      '<i class="bb-sep"></i>' +
+      '<button class="bb-t" data-t="load">불러오기</button><button class="bb-t" data-t="pdf">PDF</button><button class="bb-t" data-t="save">사진</button>' +
+      '<button class="bb-t" data-t="close">' + ic('x') + '</button></div><div class="bb-list" id="bb-list"></div></div>';
+    const cv = $('#bb-c'), ov = $('#bb-o');
+    const ctx = cv.getContext('2d'), octx = ov.getContext('2d');
     const dpr = S.lite ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
     // Sizes come from layout (clientWidth), not getBoundingClientRect: the app window opens with a zoom
     // animation, and measuring the scaled box made strokes land below the finger.
@@ -1535,9 +1752,9 @@
       if (!cv.isConnected) return;
       const w = cv.clientWidth, h = cv.clientHeight;
       if (cv.width === Math.round(w * dpr) && cv.height === Math.round(h * dpr)) return;
-      cv.width = Math.round(w * dpr);
-      cv.height = Math.round(h * dpr);
+      [cv, ov].forEach((c) => { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); });
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      octx.setTransform(dpr, 0, 0, dpr, 0, 0);
       redraw();
     };
     const at = (e) => {
@@ -1546,49 +1763,63 @@
       return [(e.clientX - r.left) * sx, (e.clientY - r.top) * sy];
     };
     const widths = () => [3, 6, 12][BB.size];
-    const styleFor = (st) => {
-      ctx.globalCompositeOperation = st.erase ? 'destination-out' : 'source-over';
-      ctx.strokeStyle = st.c;
-      ctx.lineWidth = st.erase ? st.w * 6 : st.w;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.globalAlpha = 1;
-    };
-    const drawStroke = (st, from) => {
-      const p = st.pts;
-      styleFor(st);
-      ctx.beginPath();
-      const i0 = Math.max(0, (from || 0) - 2);
-      ctx.moveTo(p[i0], p[i0 + 1]);
-      if (p.length === 2) ctx.lineTo(p[0] + 0.1, p[1] + 0.1);
-      for (let i = i0 + 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]);
-      ctx.stroke();
-    };
     function redraw() {
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
       ctx.restore();
-      BB.pages[BB.page].forEach((st) => drawStroke(st, 0));
+      BB.pages[BB.page].forEach((st) => drawStroke(ctx, st, 0));
     }
+    const clearOverlay = () => { octx.save(); octx.setTransform(1, 0, 0, 1, 0, 0); octx.clearRect(0, 0, ov.width, ov.height); octx.restore(); };
+    // straight lines snap to horizontal / vertical like a ruler
+    const snap = (st) => {
+      if (st.shape !== 'line') return;
+      const dx = st.x1 - st.x0, dy = st.y1 - st.y0;
+      const a = Math.abs(Math.atan2(dy, dx) * 180 / Math.PI);
+      if (a < 6 || a > 174) st.y1 = st.y0;
+      else if (Math.abs(a - 90) < 6) st.x1 = st.x0;
+    };
+
     // Input: pointer events where the board's WebView has them, touch events otherwise. Nothing here may throw,
     // or a stroke never starts (setPointerCapture fails on some WebViews).
     const live = {};
     const start = (id, x) => {
       fit();
-      const st = { c: bg.ink[BB.color], w: widths(), erase: BB.eraser, pts: at(x) };
+      const p = at(x);
+      const shape = ['line', 'rect', 'circle'].indexOf(BB.tool) >= 0;
+      const st = shape ? { c: bg.ink[BB.color], w: widths(), shape: BB.tool, x0: p[0], y0: p[1], x1: p[0], y1: p[1] }
+        : { c: bg.ink[BB.color], w: widths(), erase: BB.tool === 'eraser', pts: p };
       live[id] = st;
-      BB.pages[BB.page].push(st);
-      drawStroke(st, 0);
+      if (!shape) { BB.pages[BB.page].push(st); drawStroke(ctx, st, 0); }
     };
     const move = (id, list) => {
       const st = live[id];
       if (!st) return;
+      if (st.shape) {
+        const p = at(list[list.length - 1]);
+        st.x1 = p[0];
+        st.y1 = p[1];
+        snap(st);
+        clearOverlay();
+        drawStroke(octx, st, 0);
+        return;
+      }
       const from = st.pts.length;
       list.forEach((x) => { const p = at(x); st.pts.push(p[0], p[1]); });
-      drawStroke(st, from);
+      drawStroke(ctx, st, from);
     };
-    const end = (id) => { delete live[id]; };
+    const end = (id) => {
+      const st = live[id];
+      delete live[id];
+      if (!st) return;
+      if (st.shape) {
+        clearOverlay();
+        if (Math.abs(st.x1 - st.x0) + Math.abs(st.y1 - st.y0) < 4) return;
+        BB.pages[BB.page].push(st);
+        drawStroke(ctx, st, 0);
+      }
+      bbChanged();
+    };
     if (window.PointerEvent) {
       cv.addEventListener('pointerdown', (e) => {
         if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -1610,39 +1841,83 @@
       cv.addEventListener('touchmove', (e) => each(e, (t) => move('t' + t.identifier, [t])), { passive: false });
       ['touchend', 'touchcancel'].forEach((n) => cv.addEventListener(n, (e) => each(e, (t) => end('t' + t.identifier)), { passive: false }));
     }
-    C.$$('[data-ink]', body).forEach((b) => { b.onclick = () => { BB.color = Number(b.dataset.ink); BB.eraser = false; renderBoardApp(); }; });
+    C.$$('[data-ink]', body).forEach((b) => { b.onclick = () => { BB.color = Number(b.dataset.ink); if (BB.tool === 'eraser') BB.tool = 'pen'; renderBoardApp(); }; });
     C.$$('[data-size]', body).forEach((b) => { b.onclick = () => { BB.size = Number(b.dataset.size); renderBoardApp(); }; });
+    C.$$('[data-tool]', body).forEach((b) => { b.onclick = () => { BB.tool = b.dataset.tool; renderBoardApp(); }; });
     C.$$('[data-t]', body).forEach((b) => {
       b.onclick = () => {
         const t = b.dataset.t, pg = BB.pages[BB.page];
-        if (t === 'eraser') BB.eraser = !BB.eraser;
-        else if (t === 'undo') { pg.pop(); redraw(); return; }
-        else if (t === 'clear') { if (!pg.length) return; pg.length = 0; redraw(); return; }
-        else if (t === 'bg') { const k = Object.keys(BB_BG); BB.bg = k[(k.indexOf(BB.bg) + 1) % k.length]; BB.color = 0; }
-        else if (t === 'grid') BB.grid = !BB.grid;
+        if (t === 'undo') { pg.pop(); redraw(); bbChanged(); return; }
+        else if (t === 'clear') { if (!pg.length) return; pg.length = 0; redraw(); bbChanged(); return; }
+        else if (t === 'bg') { const k = Object.keys(BB_BG); BB.bg = k[(k.indexOf(BB.bg) + 1) % k.length]; BB.color = 0; bbChanged(); }
+        else if (t === 'grid') { BB.grid = (BB.grid + 1) % GRID.length; bbChanged(); }
         else if (t === 'prev') BB.page = Math.max(0, BB.page - 1);
         else if (t === 'next') { if (BB.page === BB.pages.length - 1) BB.pages.push([]); BB.page++; }
         else if (t === 'save') { saveBoard(cv); return; }
-        else if (t === 'close') { closePanel(); return; }
+        else if (t === 'pdf') { saveBoardPdf(cv); return; }
+        else if (t === 'load') { showBoardList(); return; }
+        else if (t === 'close') { bbSave(); closePanel(); return; }
         renderBoardApp();
       };
     });
     requestAnimationFrame(fit);
     setTimeout(fit, 60);
     setTimeout(fit, 500); // after the window's opening animation
+    // "지난 수학 판서" right away when this subject was drawn before
+    const items = await bbList();
+    if (BB.restore) {
+      BB.restore = false;
+      if (!bbHasInk() && items.some((it) => it.key === BB.key)) {
+        try {
+          const d = await C.get('/api/local/boards?key=' + BB.key);
+          if (!bbHasInk() && d.pages && d.pages.length) {
+            BB.pages = d.pages; BB.page = 0; BB.bg = BB_BG[d.bg] ? d.bg : BB.bg; BB.grid = d.grid || 0;
+            if (S.panel === 'board') renderBoardApp();
+            return;
+          }
+        } catch (e) { /* start empty */ }
+      }
+    }
+    const last = items.find((it) => it.label === BB.subject && it.key !== BB.key);
+    const el = $('#bb-last');
+    if (el && last && !bbHasInk()) {
+      el.innerHTML = '<button class="bb-t" id="bb-open-last">' + ic('refresh') + '지난 ' + esc(BB.subject) + ' 판서 불러오기 (' + C.shortDate(last.date) + ')</button>';
+      $('#bb-open-last').onclick = () => bbLoad(last.key);
+    }
+  }
+  async function showBoardList() {
+    const box = $('#bb-list');
+    if (box.classList.contains('on')) { box.classList.remove('on'); return; }
+    const items = await bbList();
+    const bySubject = {};
+    items.forEach((it) => { (bySubject[it.label] = bySubject[it.label] || []).push(it); });
+    const subs = Object.keys(bySubject).sort((a, b) => (a === BB.subject ? -1 : b === BB.subject ? 1 : a.localeCompare(b)));
+    box.innerHTML = '<div class="bb-list-h"><b>저장된 판서</b><button class="bb-t" id="bb-list-x">' + ic('x') + '</button></div>' +
+      (subs.length ? subs.map((s) => '<div class="bb-sub"><div class="bb-sub-n">' + esc(s) + '</div>' + bySubject[s].map((it) =>
+        '<button class="bb-item" data-key="' + esc(it.key) + '"><b>' + C.shortDate(it.date) + '</b><span>' + it.pages + '쪽 · ' + it.strokes + '획 · ' +
+        new Date(it.savedAt).getHours() + ':' + C.pad(new Date(it.savedAt).getMinutes()) + '</span></button>').join('') + '</div>').join('')
+        : '<div class="empty">아직 저장된 판서가 없습니다</div>');
+    box.classList.add('on');
+    $('#bb-list-x').onclick = () => box.classList.remove('on');
+    C.$$('[data-key]', box).forEach((b) => { b.onclick = () => { box.classList.remove('on'); bbLoad(b.dataset.key); }; });
+  }
+  function bbFileName() {
+    const d = new Date();
+    return 'board_' + C.today().replace(/-/g, '') + '_' + C.pad(d.getHours()) + C.pad(d.getMinutes()) + C.pad(d.getSeconds());
   }
   function saveBoard(cv) {
-    const out = document.createElement('canvas');
-    out.width = cv.width;
-    out.height = cv.height;
-    const x = out.getContext('2d');
-    x.fillStyle = BB_BG[BB.bg].fill;
-    x.fillRect(0, 0, out.width, out.height);
-    x.drawImage(cv, 0, 0);
-    const d = new Date();
-    const name = 'board_' + C.today().replace(/-/g, '') + '_' + C.pad(d.getHours()) + C.pad(d.getMinutes()) + C.pad(d.getSeconds());
-    const r = native('saveImage', out.toDataURL('image/png'), name);
-    if (r && r.ok) toast('칠판을 저장했습니다: ' + r.where);
+    const r = native('saveImage', bbRenderPage(BB.pages[BB.page], cv.clientWidth, cv.clientHeight, cv.width / Math.max(1, cv.clientWidth)), bbFileName());
+    if (r && r.ok) toast('칠판을 사진으로 저장했습니다: ' + r.where);
+  }
+  function saveBoardPdf(cv) {
+    if (!N || !N.savePdf) { toast('전자칠판 앱에서만 사용할 수 있습니다'); return; }
+    toast('PDF를 만드는 중입니다…', 2000);
+    setTimeout(() => {
+      const scale = Math.min(1.4, 1600 / Math.max(1, cv.clientWidth));
+      const pages = BB.pages.filter((p, i) => p.length || i === 0).map((p) => bbRenderPage(p, cv.clientWidth, cv.clientHeight, scale, 'image/jpeg'));
+      const r = native('savePdf', JSON.stringify(pages), bbFileName());
+      if (r && r.ok) toast('PDF로 저장했습니다 (' + pages.length + '쪽): ' + r.where, 5000);
+    }, 50);
   }
 
   function setDisplay(c) {

@@ -137,6 +137,63 @@ public class Router implements HttpServer.Handler {
         return res;
     }
 
+    // ------------------------------------------------------------------ saved boards (칠판 판서)
+
+    /** Board drawings saved per lesson on this device: list (GET), one (GET ?key=), save (POST ?key=). */
+    private Response boards(Request r) throws Exception {
+        if (!r.isLocal()) throw new ApiException(403, "기기에서만 사용할 수 있습니다");
+        java.io.File dir = new java.io.File(ctx.getFilesDir(), "boards");
+        if (!dir.isDirectory()) dir.mkdirs();
+        java.io.File index = new java.io.File(dir, "index.json");
+        String key = r.param("key");
+        if (key != null && !key.matches("[0-9A-Za-z_-]{1,40}")) throw new ApiException(400, "잘못된 판서 이름");
+        synchronized (this) {
+            JSONObject idx;
+            try {
+                String s = Util.readFile(index);
+                idx = s == null ? new JSONObject() : new JSONObject(s);
+            } catch (Exception e) {
+                idx = new JSONObject();
+            }
+            if ("POST".equals(r.method)) {
+                if (key == null) throw new ApiException(400, "판서 이름 누락");
+                byte[] body = r.body();
+                if (body.length > 8 * 1024 * 1024) throw new ApiException(413, "판서가 너무 큽니다");
+                JSONObject b = new JSONObject(new String(body, java.nio.charset.StandardCharsets.UTF_8));
+                Util.writeFileAtomic(new java.io.File(dir, key + ".json"), body);
+                Util.put(idx, key, Util.jo("date", b.optString("date"), "label", b.optString("label"), "pages", b.optInt("pageCount"),
+                        "strokes", b.optInt("strokeCount"), "savedAt", System.currentTimeMillis()));
+                // keep the newest 60
+                JSONArray names = idx.names();
+                if (names != null && names.length() > 60) {
+                    java.util.List<String> ks = new java.util.ArrayList<>();
+                    for (int i = 0; i < names.length(); i++) ks.add(names.optString(i));
+                    final JSONObject fi = idx;
+                    ks.sort((x, y) -> Long.compare(fi.optJSONObject(x).optLong("savedAt"), fi.optJSONObject(y).optLong("savedAt")));
+                    for (int i = 0; i < ks.size() - 60; i++) {
+                        idx.remove(ks.get(i));
+                        new java.io.File(dir, ks.get(i) + ".json").delete();
+                    }
+                }
+                Util.writeFileAtomic(index, idx.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                return Response.ok();
+            }
+            if (key != null) {
+                String s = Util.readFile(new java.io.File(dir, key + ".json"));
+                if (s == null) throw new ApiException(404, "저장된 판서가 없습니다");
+                return Response.json(s);
+            }
+            JSONArray out = new JSONArray();
+            JSONArray names = idx.names();
+            for (int i = 0; names != null && i < names.length(); i++) {
+                JSONObject m = Util.copy(idx.optJSONObject(names.optString(i)));
+                Util.put(m, "key", names.optString(i));
+                out.put(m);
+            }
+            return Response.json(Util.jo("items", out));
+        }
+    }
+
     // ------------------------------------------------------------------ documents
 
     /** PDF shown on the board itself when the school server cannot render it (Android's built-in renderer). */
@@ -288,6 +345,8 @@ public class Router implements HttpServer.Handler {
                 res.headers.put("Cache-Control", "max-age=3600");
                 return res;
             }
+            case "boards":
+                return boards(r);
             case "update": {
                 UpdateManager u = core.updates();
                 if (u == null) throw new ApiException(503, "서비스 준비 중");

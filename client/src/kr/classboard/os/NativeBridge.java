@@ -225,6 +225,56 @@ public class NativeBridge {
                 "width", dm.widthPixels, "height", dm.heightPixels).toString();
     }
 
+    /** Board pages (JPEG data URLs, JSON array) as one PDF in Documents/ClassBoard. */
+    @JavascriptInterface
+    public String savePdf(String pagesJson, String name) {
+        try {
+            org.json.JSONArray pages = new org.json.JSONArray(pagesJson);
+            if (pages.length() == 0) return err("저장할 쪽이 없습니다");
+            android.graphics.pdf.PdfDocument doc = new android.graphics.pdf.PdfDocument();
+            for (int i = 0; i < pages.length(); i++) {
+                String d = pages.optString(i);
+                int comma = d.indexOf(',');
+                byte[] img = android.util.Base64.decode(d.substring(comma + 1), android.util.Base64.DEFAULT);
+                android.graphics.Bitmap bm = android.graphics.BitmapFactory.decodeByteArray(img, 0, img.length);
+                if (bm == null) continue;
+                // A4 landscape width in points, height from the board's shape
+                int pw = 842, ph = Math.round(842f * bm.getHeight() / bm.getWidth());
+                android.graphics.pdf.PdfDocument.Page pg = doc.startPage(new android.graphics.pdf.PdfDocument.PageInfo.Builder(pw, ph, i + 1).create());
+                android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG);
+                pg.getCanvas().drawBitmap(bm, null, new android.graphics.Rect(0, 0, pw, ph), paint);
+                doc.finishPage(pg);
+                bm.recycle();
+            }
+            String file = (name == null || !name.matches("[A-Za-z0-9_-]{1,60}") ? "board" : name) + ".pdf";
+            String where;
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                android.content.ContentValues v = new android.content.ContentValues();
+                v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, file);
+                v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf");
+                v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOCUMENTS + "/ClassBoard");
+                android.net.Uri u = act.getContentResolver().insert(android.provider.MediaStore.Files.getContentUri("external"), v);
+                if (u == null) return err("저장 위치를 만들 수 없습니다");
+                try (java.io.OutputStream o = act.getContentResolver().openOutputStream(u)) {
+                    doc.writeTo(o);
+                }
+                where = "문서/ClassBoard";
+            } else {
+                java.io.File dir = new java.io.File(act.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "ClassBoard");
+                dir.mkdirs();
+                java.io.File f = new java.io.File(dir, file);
+                try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) {
+                    doc.writeTo(o);
+                }
+                where = f.getAbsolutePath();
+            }
+            doc.close();
+            return Util.jo("ok", true, "where", where).toString();
+        } catch (Exception e) {
+            return err("PDF를 만들지 못했습니다: " + e.getMessage());
+        }
+    }
+
     /** Save a PNG drawn on the board (data URL) to Pictures/ClassBoard. */
     @JavascriptInterface
     public String saveImage(String dataUrl, String name) {

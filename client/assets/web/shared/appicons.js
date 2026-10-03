@@ -94,6 +94,11 @@
     alerts: () => colored('alerts', '#8C7BFF', '#5640E0',
       '<path d="M32 13c-7.2 0-12 5.6-12 12.6v8.2l-3.6 5.6c-.9 1.4.1 3.1 1.7 3.1h27.8c1.6 0 2.6-1.7 1.7-3.1L44 33.8v-8.2C44 18.6 39.2 13 32 13Z" fill="#fff"/>' +
       '<path d="M26.6 46a5.6 5.6 0 0 0 10.8 0Z" fill="#fff"/><circle cx="44.5" cy="17.5" r="5" fill="#FF5A52" stroke="#6A55F0" stroke-width="2"/>'),
+    pick: () => colored('pick', '#FF7AA8', '#E0457B',
+      '<rect x="9" y="17" width="25" height="25" rx="5" fill="#fff" transform="rotate(-10 21.5 29.5)"/>' +
+      '<g fill="#E0457B" transform="rotate(-10 21.5 29.5)"><circle cx="15.5" cy="23" r="2.1"/><circle cx="21.5" cy="29.5" r="2.1"/><circle cx="27.5" cy="36" r="2.1"/></g>' +
+      '<rect x="30" y="24" width="24" height="24" rx="5" fill="#FFE3EE" transform="rotate(12 42 36)"/>' +
+      '<g fill="#E0457B" transform="rotate(12 42 36)"><circle cx="36" cy="30" r="2"/><circle cx="48" cy="30" r="2"/><circle cx="36" cy="42" r="2"/><circle cx="48" cy="42" r="2"/></g>'),
     drawer: () => colored('drawer', '#7C8594', '#4C5462',
       [0, 1, 2].map((y) => [0, 1, 2].map((x) => '<circle cx="' + (20 + x * 12) + '" cy="' + (20 + y * 12) + '" r="4" fill="#fff"/>').join('')).join('')),
   };

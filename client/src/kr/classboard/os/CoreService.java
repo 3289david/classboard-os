@@ -287,6 +287,7 @@ public class CoreService extends Service {
             JSONObject config = st == null ? null : st.optJSONObject("config");
             JSONObject settings = cfg.settings();
             powerTick(settings);
+            morningRestart();
             if (config == null) return;
             JSONObject data = fetcher.get();
             JSONObject full = data.optJSONObject("comciFull");
@@ -342,6 +343,33 @@ public class CoreService extends Service {
             Log.w(TAG, "tick", e);
         }
     }
+
+    /**
+     * Once a day, before school (설정 → 홈 화면 → 아침 자동 재시작, default 07:00), restart the app so a WebView
+     * that ran all day starts fresh. Never during a lesson.
+     */
+    private void morningRestart() {
+        JSONObject home = cfg.home();
+        if (!home.optBoolean("morningRestart", true) || inClass()) return;
+        String at = home.optString("restartAt", "07:00");
+        java.util.Calendar c = java.util.Calendar.getInstance(Util.KST);
+        String now = String.format(java.util.Locale.ROOT, "%02d:%02d", c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE));
+        if (!now.equals(at) || Util.today().equals(cfg.prefs().getString("restartDay", ""))) return;
+        // only if the app has been running a while (not right after a boot or an update)
+        if (android.os.SystemClock.elapsedRealtime() - startedAt < 30 * 60_000L) {
+            cfg.prefs().edit().putString("restartDay", Util.today()).apply();
+            return;
+        }
+        cfg.prefs().edit().putString("restartDay", Util.today()).commit();
+        Log.i(TAG, "morning restart");
+        Intent i = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        PendingIntent pi = PendingIntent.getActivity(this, 11, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_CANCEL_CURRENT);
+        android.app.AlarmManager am = (android.app.AlarmManager) getSystemService(ALARM_SERVICE);
+        am.set(android.app.AlarmManager.RTC, System.currentTimeMillis() + 2000, pi);
+        android.os.Process.killProcess(android.os.Process.myPid());
+    }
+
+    private final long startedAt = android.os.SystemClock.elapsedRealtime();
 
     private String lastNotice = "";
     private volatile List<Periods.Slot> todaySlots;

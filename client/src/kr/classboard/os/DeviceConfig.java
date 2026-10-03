@@ -76,6 +76,8 @@ public class DeviceConfig {
         if (o.has("lite") && o.optString("lite").matches("auto|on|off")) Util.put(h, "lite", o.optString("lite"));
         if (o.has("preClass")) Util.put(h, "preClass", o.optBoolean("preClass"));
         if (o.has("autoUpdate")) Util.put(h, "autoUpdate", o.optBoolean("autoUpdate"));
+        if (o.has("morningRestart")) Util.put(h, "morningRestart", o.optBoolean("morningRestart"));
+        if (o.has("restartAt") && o.optString("restartAt").matches("([01]\\d|2[0-3]):[0-5]\\d")) Util.put(h, "restartAt", o.optString("restartAt"));
         if (o.has("preClassSound")) Util.put(h, "preClassSound", o.optBoolean("preClassSound"));
         if (o.has("preClassMin")) Util.put(h, "preClassMin", Math.max(1, Math.min(10, o.optInt("preClassMin", 2))));
         sp.edit().putString("home", h.toString()).apply();
