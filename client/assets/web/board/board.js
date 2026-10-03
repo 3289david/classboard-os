@@ -317,36 +317,8 @@
   }
 
   // ---------------------------------------------------------------- home
-  // one line on the first home page: today's events, exams soon, lunch, timetable changes, new posts
-  function renderToday() {
-    const el = $('#c-today');
-    if (!el) return;
-    const items = [];
-    const today = C.today();
-    if (S.dataLoaded) {
-      allEvents().filter((e) => e.date <= today && (e.endDate || e.date) >= today && e.kind !== '시험').slice(0, 2)
-        .forEach((e) => items.push(['calendar', '오늘 ' + e.name, 'calendar']));
-      const ex = examItems()[0];
-      if (ex && ex.date <= C.addDays(today, 7)) items.push(['exam', ex.name + ' ' + examDday(ex), 'calendar']);
-      const changed = periodsOn(today).filter((e) => e.ch);
-      if (changed.length) items.push(['info', '시간표 변경 ' + changed.map((e) => e.p + '교시').join(', '), 'timetable']);
-      const md = mealDay();
-      const lunch = md.date === today && (md.list.find((x) => x.code === 2) || md.list[0]);
-      if (lunch) items.push(['meal', '급식 ' + lunch.dishes.slice(0, 3).map((d) => d.name).join(', '), 'meal']);
-      const fresh = homepageLatest(50).filter((it) => it.date >= C.addDays(today, -1)).length;
-      if (fresh) items.push(['file', '새 소식 ' + fresh + '건', 'notices']);
-    }
-    const h = items.length ? items.map((it) => '<button class="today-i" data-today="' + it[2] + '">' + ic(it[0]) + '<span>' + esc(it[1]) + '</span></button>').join('')
-      : '<span class="today-none">' + (S.dataLoaded ? '오늘 특별한 소식이 없습니다' : '') + '</span>';
-    if (el._h === h) return;
-    el._h = h;
-    el.innerHTML = h;
-    C.$$('[data-today]', el).forEach((b) => { b.onclick = (ev) => openApp(b.dataset.today, ev.currentTarget); });
-  }
-
   function renderHome() {
     renderNowCard();
-    renderToday();
     renderTimetable();
     renderNotices($('#c-notices'), true);
     renderMeals();
@@ -1600,7 +1572,8 @@
   }
 
   // ---------------------------------------------------------------- 칠판 (blackboard)
-  // Drawings are saved on this board per subject (수학, 과학 …; 자유 판서 outside lessons) and can be opened again later.
+  // 저장 keeps the drawing on this board under the lesson's subject (수학, 과학 …; 자유 판서 outside lessons);
+  // 불러오기 opens saved drawings again. Nothing is saved, cleared or restored automatically.
   const BB_BG = {
     green: { name: '칠판', fill: '#264c3a', grid: 'rgba(255,255,255,.10)', ink: ['#f7f7f2', '#ffe066', '#ff9fb2', '#8fd0ff', '#b6e36b'] },
     black: { name: '흑판', fill: '#1d2024', grid: 'rgba(255,255,255,.10)', ink: ['#f7f7f2', '#ffe066', '#ff9fb2', '#8fd0ff', '#b6e36b'] },
@@ -1620,10 +1593,13 @@
     if (S.seg.type === 'class') { const e = entryFor(S.seg.slot.p); if (e && e.s) return { name: e.s, p: S.seg.slot.p }; }
     return { name: '자유 판서', p: 0 };
   }
+  // a new drawing gets its own name on its first 저장 (saves never replace another drawing);
+  // a drawing opened with 불러오기 is saved back to where it came from
   function bbKeyFor(sub) {
     let h = 0;
     for (const ch of sub.name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return 's' + h.toString(36) + '_' + C.today().replace(/-/g, '') + '_' + sub.p;
+    const d = new Date();
+    return 's' + h.toString(36) + '_' + C.today().replace(/-/g, '') + '_' + C.pad(d.getHours()) + C.pad(d.getMinutes()) + C.pad(d.getSeconds());
   }
   function bbHasInk() { return BB.pages.some((p) => p.length); }
   function bbData() {
@@ -1631,30 +1607,34 @@
       pageCount: BB.pages.length, strokeCount: BB.pages.reduce((n, p) => n + p.length, 0) };
   }
   async function bbSave() {
-    if (!BB.key || !BB.dirty || !bbHasInk()) return;
-    BB.dirty = false;
+    if (!bbHasInk()) { toast('저장할 판서가 없습니다'); return; }
+    if (!BB.key) {
+      const sub = bbSubject();
+      BB.subject = sub.name;
+      BB.key = bbKeyFor(sub);
+    }
     try {
-      await fetch('/api/local/boards?key=' + BB.key, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bbData()) });
-    } catch (e) { BB.dirty = true; }
+      const res = await fetch('/api/local/boards?key=' + BB.key, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bbData()) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      BB.dirty = false;
+      toast(BB.subject + ' 판서를 저장했습니다', 2200);
+    } catch (e) { toast('저장하지 못했습니다: ' + e.message); }
   }
   function bbChanged() {
     BB.dirty = true;
-    clearTimeout(bbChanged._t);
-    bbChanged._t = setTimeout(bbSave, 2000);
   }
   async function bbList() {
     try { return (await C.get('/api/local/boards')).items.sort((a, b) => b.savedAt - a.savedAt); } catch (e) { return []; }
   }
   async function bbLoad(key) {
-    await bbSave();
     const d = await C.get('/api/local/boards?key=' + encodeURIComponent(key));
-    // continue writing in today's drawing for this subject; the old one stays as it was
+    BB.key = key;
+    BB.loadedSubject = d.subject;
     BB.pages = d.pages && d.pages.length ? d.pages : [[]];
     BB.page = 0;
     BB.bg = BB_BG[d.bg] ? d.bg : BB.bg;
     BB.grid = d.grid || 0;
-    BB.dirty = true;
-    bbSave();
+    BB.dirty = false;
     renderBoardApp();
     toast(d.subject + ' 판서를 불러왔습니다 (' + C.shortDate(d.date) + ')', 2500);
   }
@@ -1713,21 +1693,11 @@
 
   async function renderBoardApp() {
     const body = $('#p-body');
-    // a new lesson (another subject) starts a new drawing; the previous one is already saved
-    const sub = bbSubject();
-    if (BB.subject !== sub.name || !BB.key) {
-      await bbSave();
-      if (BB.subject !== null && bbHasInk() && BB.subject !== sub.name) BB.pages = [[]];
-      BB.page = 0;
-      BB.subject = sub.name;
-      BB.key = bbKeyFor(sub);
-      BB.dirty = false;
-      BB.restore = true; // after an app restart, continue this lesson's saved drawing
-    }
+    BB.subject = BB.key ? (BB.loadedSubject || BB.subject || bbSubject().name) : bbSubject().name;
     const bg = BB_BG[BB.bg];
     const svg = (d) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
     body.innerHTML = '<div class="bb bb-' + BB.bg + (BB.grid ? ' grid' : '') + '" style="--g:' + GRID[BB.grid] + 'px"><canvas id="bb-c"></canvas><canvas id="bb-o"></canvas>' +
-      '<div class="bb-top"><b>' + esc(BB.subject) + '</b><span id="bb-last"></span></div>' +
+      '<div class="bb-top"><b>' + esc(BB.subject) + '</b></div>' +
       '<div class="bb-bar">' +
       bg.ink.map((c, i) => '<button class="bb-ink' + (BB.tool !== 'eraser' && BB.color === i ? ' on' : '') + '" data-ink="' + i + '" style="--ink:' + c + '"></button>').join('') +
       '<i class="bb-sep"></i>' +
@@ -1741,7 +1711,7 @@
       '<button class="bb-t" data-t="prev"' + (BB.page === 0 ? ' disabled' : '') + '>' + ic('left') + '</button><span class="bb-pg">' + (BB.page + 1) + ' / ' + BB.pages.length + '</span>' +
       '<button class="bb-t" data-t="next">' + (BB.page === BB.pages.length - 1 ? ic('plus') : ic('right')) + '</button>' +
       '<i class="bb-sep"></i>' +
-      '<button class="bb-t" data-t="load">불러오기</button><button class="bb-t" data-t="pdf">PDF</button><button class="bb-t" data-t="save">사진</button>' +
+      '<button class="bb-t" data-t="store">저장</button><button class="bb-t" data-t="load">불러오기</button><button class="bb-t" data-t="pdf">PDF</button><button class="bb-t" data-t="save">사진</button>' +
       '<button class="bb-t" data-t="close">' + ic('x') + '</button></div><div class="bb-list" id="bb-list"></div></div>';
     const cv = $('#bb-c'), ov = $('#bb-o');
     const ctx = cv.getContext('2d'), octx = ov.getContext('2d');
@@ -1848,42 +1818,30 @@
       b.onclick = () => {
         const t = b.dataset.t, pg = BB.pages[BB.page];
         if (t === 'undo') { pg.pop(); redraw(); bbChanged(); return; }
-        else if (t === 'clear') { if (!pg.length) return; pg.length = 0; redraw(); bbChanged(); return; }
+        else if (t === 'clear') {
+          if (!pg.length) return;
+          pg.length = 0;
+          redraw();
+          bbChanged();
+          // an empty board is a new drawing: the next 저장 makes a new entry instead of replacing the old one
+          if (!bbHasInk()) { BB.key = null; BB.loadedSubject = null; BB.subject = bbSubject().name; const top = $('.bb-top b'); if (top) top.textContent = BB.subject; }
+          return;
+        }
         else if (t === 'bg') { const k = Object.keys(BB_BG); BB.bg = k[(k.indexOf(BB.bg) + 1) % k.length]; BB.color = 0; bbChanged(); }
         else if (t === 'grid') { BB.grid = (BB.grid + 1) % GRID.length; bbChanged(); }
         else if (t === 'prev') BB.page = Math.max(0, BB.page - 1);
         else if (t === 'next') { if (BB.page === BB.pages.length - 1) BB.pages.push([]); BB.page++; }
         else if (t === 'save') { saveBoard(cv); return; }
         else if (t === 'pdf') { saveBoardPdf(cv); return; }
+        else if (t === 'store') { bbSave(); return; }
         else if (t === 'load') { showBoardList(); return; }
-        else if (t === 'close') { bbSave(); closePanel(); return; }
+        else if (t === 'close') { closePanel(); return; }
         renderBoardApp();
       };
     });
     requestAnimationFrame(fit);
     setTimeout(fit, 60);
     setTimeout(fit, 500); // after the window's opening animation
-    // "지난 수학 판서" right away when this subject was drawn before
-    const items = await bbList();
-    if (BB.restore) {
-      BB.restore = false;
-      if (!bbHasInk() && items.some((it) => it.key === BB.key)) {
-        try {
-          const d = await C.get('/api/local/boards?key=' + BB.key);
-          if (!bbHasInk() && d.pages && d.pages.length) {
-            BB.pages = d.pages; BB.page = 0; BB.bg = BB_BG[d.bg] ? d.bg : BB.bg; BB.grid = d.grid || 0;
-            if (S.panel === 'board') renderBoardApp();
-            return;
-          }
-        } catch (e) { /* start empty */ }
-      }
-    }
-    const last = items.find((it) => it.label === BB.subject && it.key !== BB.key);
-    const el = $('#bb-last');
-    if (el && last && !bbHasInk()) {
-      el.innerHTML = '<button class="bb-t" id="bb-open-last">' + ic('refresh') + '지난 ' + esc(BB.subject) + ' 판서 불러오기 (' + C.shortDate(last.date) + ')</button>';
-      $('#bb-open-last').onclick = () => bbLoad(last.key);
-    }
   }
   async function showBoardList() {
     const box = $('#bb-list');

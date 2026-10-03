@@ -688,16 +688,6 @@ html.lite .doc-page { box-shadow: none; }
 .post-doc-pg { display: block; width: min(100%, 100rem); margin: 0 auto 1.2rem; background: #fff; border-radius: .4rem; box-shadow: 0 .4rem 1.4rem rgba(0, 0, 0, .3); cursor: zoom-in; }
 html.lite .post-doc-pg { box-shadow: none; }
 
-/* ---------------------------------------------------------------- 오늘의 알림판 */
-.pg-glance { grid-template-rows: 1fr auto auto; }
-.pg-glance .today-line { grid-column: 1 / -1; }
-.today-line { display: flex; gap: .6rem; overflow: hidden; white-space: nowrap; min-height: 3.2rem; align-items: center; }
-.today-i { display: inline-flex; align-items: center; gap: .5rem; padding: .55rem 1.1rem; border-radius: 2rem; background: color-mix(in srgb, var(--text) 7%, transparent); font-size: 1.15rem; color: var(--text); flex: none; max-width: 40rem; }
-.today-i span { overflow: hidden; text-overflow: ellipsis; }
-.today-i .ic { width: 1.4rem; height: 1.4rem; color: var(--accent); flex: none; }
-.today-i:active { background: color-mix(in srgb, var(--text) 14%, transparent); }
-.today-none { color: var(--text3); font-size: 1.1rem; padding-left: .4rem; }
-
 /* ---------------------------------------------------------------- 번호 뽑기 */
 .pick-app { display: grid; grid-template-columns: 1.2fr 1fr; gap: 3rem; min-height: 100%; }
 .pick-main { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.6rem; }
