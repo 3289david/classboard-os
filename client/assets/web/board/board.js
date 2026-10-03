@@ -1711,8 +1711,7 @@
       '<button class="bb-t" data-t="prev"' + (BB.page === 0 ? ' disabled' : '') + '>' + ic('left') + '</button><span class="bb-pg">' + (BB.page + 1) + ' / ' + BB.pages.length + '</span>' +
       '<button class="bb-t" data-t="next">' + (BB.page === BB.pages.length - 1 ? ic('plus') : ic('right')) + '</button>' +
       '<i class="bb-sep"></i>' +
-      '<button class="bb-t" data-t="store">저장</button><button class="bb-t" data-t="load">불러오기</button><button class="bb-t" data-t="pdf">PDF</button><button class="bb-t" data-t="save">사진</button>' +
-      '<button class="bb-t" data-t="close">' + ic('x') + '</button></div><div class="bb-list" id="bb-list"></div></div>';
+      '<button class="bb-t" data-t="store">저장</button><button class="bb-t" data-t="load">불러오기</button><button class="bb-t" data-t="pdf">PDF</button><button class="bb-t" data-t="save">사진</button></div><div class="bb-list" id="bb-list"></div></div>';
     const cv = $('#bb-c'), ov = $('#bb-o');
     const ctx = cv.getContext('2d'), octx = ov.getContext('2d');
     const dpr = S.lite ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
@@ -1835,13 +1834,22 @@
         else if (t === 'pdf') { saveBoardPdf(cv); return; }
         else if (t === 'store') { bbSave(); return; }
         else if (t === 'load') { showBoardList(); return; }
-        else if (t === 'close') { closePanel(); return; }
         renderBoardApp();
       };
     });
     requestAnimationFrame(fit);
     setTimeout(fit, 60);
     setTimeout(fit, 500); // after the window's opening animation
+    fitBar();
+    setTimeout(fitBar, 500);
+  }
+  // the toolbar always stays one line: on a narrower screen it is scaled down to fit
+  function fitBar() {
+    const bar = $('.bb-bar'), box = $('.bb');
+    if (!bar || !box) return;
+    bar.style.transform = 'translateX(-50%)';
+    const k = Math.min(1, (box.clientWidth * 0.96) / Math.max(1, bar.scrollWidth));
+    if (k < 1) bar.style.transform = 'translateX(-50%) scale(' + k.toFixed(3) + ')';
   }
   async function showBoardList() {
     const box = $('#bb-list');

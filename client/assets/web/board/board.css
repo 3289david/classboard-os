@@ -733,3 +733,5 @@ html.lite .bb-list { box-shadow: none; }
 .bb.grid { background-image: none; }
 .bb.grid::before { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(rgba(255,255,255,.10) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.10) 1px, transparent 1px); background-size: var(--g) var(--g); }
 .bb-white.grid::before { background-image: linear-gradient(rgba(40,60,120,.14) 1px, transparent 1px), linear-gradient(90deg, rgba(40,60,120,.14) 1px, transparent 1px); }
+/* 칠판 toolbar: one line (scaled down by fitBar when the screen is narrow) */
+.bb-bar { flex-wrap: nowrap; max-width: none; transform-origin: 50% 100%; }
