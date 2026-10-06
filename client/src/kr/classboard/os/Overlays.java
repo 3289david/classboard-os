@@ -404,49 +404,134 @@ public class Overlays {
     // ---------------------------------------------------------------- floating navigation bar
 
     private View navBar;
+    private NavHandler navHandler;
+    private boolean navCompact;
+    private Runnable navRevert;
 
     public interface NavHandler {
         void nav(String action);
     }
 
-    /** Android-style Back / Home / Recents bar drawn over other apps (the board hides the system bar). */
-    public void showNav(NavHandler h) {
+    /**
+     * Android-style Back / Home / Recents bar drawn over other apps (the board hides the system bar).
+     * @param compact during a lesson only a thin handle is shown, like Android's hidden navigation bar:
+     *                touching it shows the keys for a few seconds, so the bar never covers the teacher's content.
+     */
+    public void showNav(NavHandler h, boolean compact) {
         ui.post(() -> {
-            if (!allowed() || navBar != null) return;
-            LinearLayout bar = new LinearLayout(ctx);
-            bar.setOrientation(LinearLayout.HORIZONTAL);
-            bar.setGravity(Gravity.CENTER);
-            bar.setPadding(dp(14), dp(4), dp(14), dp(4));
-            bar.setBackground(rounded(0xCC15181E, dp(26)));
-            for (String a : new String[]{"back", "home", "recents", "memo"}) {
-                NavKey k = new NavKey(ctx, a);
-                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(dp(64), dp(48));
-                l.setMargins(dp(6), 0, dp(6), 0);
-                k.setOnClickListener(v -> h.nav(a));
-                bar.addView(k, l);
-            }
-            WindowManager.LayoutParams lp = params(false, false);
-            lp.flags &= ~WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
-            lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-            lp.y = dp(10);
-            fitWindow(bar, lp);
+            if (!allowed()) return;
+            navHandler = h;
+            navCompact = compact;
+            buildNav(false);
+        });
+    }
+
+    /** The lesson started / ended: switch between the full bar and the thin handle. */
+    public void setNavCompact(boolean compact) {
+        ui.post(() -> {
+            if (navCompact == compact) return;
+            navCompact = compact;
+            if (navBar != null) buildNav(false);
+        });
+    }
+
+    private void removeNavView() {
+        if (navRevert != null) ui.removeCallbacks(navRevert);
+        navRevert = null;
+        if (navBar != null) {
             try {
-                wm.addView(bar, lp);
-                navBar = bar;
+                wm.removeView(navBar);
             } catch (Exception ignored) {
             }
+        }
+        navBar = null;
+    }
+
+    private void buildNav(boolean transientFull) {
+        removeNavView();
+        if (navHandler == null) return;
+        boolean full = !navCompact || transientFull;
+        View v = full ? navKeys() : navHandle();
+        WindowManager.LayoutParams lp = params(false, false);
+        lp.flags &= ~WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
+        lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        lp.y = full ? dp(10) : 0;
+        fitWindow(v, lp);
+        try {
+            wm.addView(v, lp);
+            navBar = v;
+        } catch (Exception ignored) {
+        }
+        if (navCompact && full) scheduleNavRevert(4000);
+    }
+
+    private void scheduleNavRevert(long ms) {
+        if (navRevert != null) ui.removeCallbacks(navRevert);
+        navRevert = () -> {
+            navRevert = null;
+            if (navCompact && navBar != null) buildNav(false);
+        };
+        ui.postDelayed(navRevert, ms);
+    }
+
+    private View navKeys() {
+        LinearLayout bar = new LinearLayout(ctx);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER);
+        bar.setPadding(dp(14), dp(4), dp(14), dp(4));
+        bar.setBackground(rounded(0xCC15181E, dp(26)));
+        for (String a : new String[]{"back", "home", "recents", "memo"}) {
+            NavKey k = new NavKey(ctx, a);
+            LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(dp(64), dp(48));
+            l.setMargins(dp(6), 0, dp(6), 0);
+            k.setOnClickListener(v -> {
+                navHandler.nav(a);
+                if (navCompact) scheduleNavRevert(700);
+            });
+            bar.addView(k, l);
+        }
+        // keep it open while the bar is being used
+        bar.setOnTouchListener((v, e) -> {
+            if (navCompact) scheduleNavRevert(4000);
+            return false;
         });
+        return bar;
+    }
+
+    /** Thin handle at the bottom edge (a tall invisible touch area with a small pill). */
+    private View navHandle() {
+        View h = new View(ctx) {
+            @Override
+            protected void onDraw(Canvas c) {
+                // dark pill with a light edge: visible on white and on dark apps alike
+                Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+                float w = dp(88), t = dp(6);
+                float x = (getWidth() - w) / 2f, y = getHeight() - dp(10) - t;
+                p.setColor(0xCC1B1E25);
+                c.drawRoundRect(x, y, x + w, y + t, t, t, p);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(dp(1));
+                p.setColor(0x99FFFFFF);
+                c.drawRoundRect(x, y, x + w, y + t, t, t, p);
+            }
+        };
+        h.setMinimumWidth(dp(220));
+        h.setMinimumHeight(dp(26));
+        h.setContentDescription("하단바 보이기");
+        h.setOnTouchListener((v, e) -> {
+            if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                buildNav(true);
+                return true;
+            }
+            return false;
+        });
+        return h;
     }
 
     public void hideNav() {
         ui.post(() -> {
-            if (navBar != null) {
-                try {
-                    wm.removeView(navBar);
-                } catch (Exception ignored) {
-                }
-            }
-            navBar = null;
+            navHandler = null;
+            removeNavView();
         });
     }
 

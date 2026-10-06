@@ -379,6 +379,7 @@ public class CoreService extends Service {
     /** "곧 N교시 시작" 10 seconds before each class (설정 → 홈 화면 → 수업 시작 전 알림). Runs every second, no heavy work. */
     private void preClassTick() {
         try {
+            overlays.setNavCompact(compactNav());
             List<Periods.Slot> slots = todaySlots;
             if (slots == null || !Util.today().equals(todayDate)) return;
             JSONObject home = cfg.home();
@@ -502,7 +503,12 @@ public class CoreService extends Service {
     }
 
     public void onBoardPaused() {
-        if (cfg.settings().optBoolean("floatingNav", true)) overlays.showNav(this::nav);
+        if (cfg.settings().optBoolean("floatingNav", true)) overlays.showNav(this::nav, compactNav());
+    }
+
+    /** During a lesson the floating bar shrinks to a thin handle (설정 → 홈 화면 → 수업 중 하단바 숨기기). */
+    private boolean compactNav() {
+        return inClass() && cfg.home().optBoolean("hideNavInClass", true);
     }
 
     public void onBoardResumed() {

@@ -186,6 +186,7 @@
       case 'folder': if (S.panel === 'files') renderFiles(); break;
       case 'storage': onStorage(data || {}); break;
       case 'update':
+        if (quietNow()) break;
         if (data && data.need === 'installApps') toast('자동 업데이트를 하려면 설정 → 권한에서 "앱 설치 허용"을 켜 주세요', 6000);
         else if (data && data.installing) toast('새 버전을 설치합니다. 잠시 후 다시 시작됩니다', 6000);
         else if (data && data.failed) toast('업데이트 설치 실패: ' + data.failed, 6000);
@@ -299,6 +300,7 @@
     const key = seg.type + (seg.slot ? seg.slot.p : '');
     const changed = key !== S.segKey;
     S.seg = seg;
+    updateNav();
     if (changed) { S.segKey = key; S.manualView = null; if (seg.type === 'class') S.timer = { mode: 'period', running: false, endAt: 0, remain: 0, preset: 0 }; }
     const want = S.manualView || autoView();
     if (want !== S.view || changed) setView(want);
@@ -555,12 +557,13 @@
     try {
       const d = await C.get('/api/homepage/detail?menuId=' + encodeURIComponent(o.menuId) + '&bbsId=' + encodeURIComponent(o.bbsId) + '&nttId=' + encodeURIComponent(o.nttId) + '&sen=' + (o.sen === '1' ? 1 : 0), pinHeaders());
       if (S.panel !== 'post' || S.panelOpts !== o) return;
-      body.innerHTML = '<div><h1 style="font-size:2.6rem;margin-bottom:.6rem;letter-spacing:-.02em">' + esc(d.title || (it && it.title) || '') + '</h1>' +
+      body.innerHTML = '<div class="zm"><h1 style="font-size:2.6rem;margin-bottom:.6rem;letter-spacing:-.02em">' + esc(d.title || (it && it.title) || '') + '</h1>' +
         '<p class="muted" style="margin-bottom:1.4rem">' + esc(it ? it.date + ' · ' + it.author : '') + '</p>' +
         (d.files.length ? '<div class="mats" style="margin-bottom:1.4rem">' + d.files.map((f, i) => '<button class="mat" data-f="' + i + '">' + ic(fileIcon(f.name)) + esc(f.name) + ' <span class="dim">' + C.bytes(f.size) + '</span></button>').join('') + '</div>' : '') +
-        (d.body ? '<div style="font-size:1.5rem;line-height:1.65;white-space:pre-wrap">' + esc(d.body) + '</div>' : '') +
-        d.images.map((src) => '<img src="' + esc(src) + '" alt="" style="max-width:100%;margin-top:1rem;border-radius:.8rem;background:#fff">').join('') +
+        (d.body ? '<div class="zt">' + esc(d.body) + '</div>' : '') +
+        d.images.map((src) => '<img class="zi" src="' + esc(src) + '" alt="">').join('') +
         '<div id="post-doc"></div></div>';
+      enableZoom(body);
       const docFile = d.files.find((f) => DOC_EXT.test(f.name));
       if (docFile) inlineDoc(docFile, o);
       C.$$('[data-f]', body).forEach((b) => {
@@ -863,6 +866,7 @@
       const h = await localPost('/api/local/home', patch);
       S.device.home = h;
       renderDock();
+      updateNav();
       return true;
     } catch (e) { toast(e.message); return false; }
   }
@@ -1072,6 +1076,7 @@
   }
   function closePanel() {
     if (!S.panel) return;
+    removeZoomCtl();
     S.panel = null;
     const p = $('#panel');
     p.classList.add('closing');
@@ -1079,6 +1084,7 @@
     closePanel._t = setTimeout(() => { p.classList.remove('on', 'closing'); $('#p-body').innerHTML = ''; }, 300);
   }
   function refreshPanel() {
+    removeZoomCtl();
     const a = APPS[S.panel];
     const body = $('#p-body');
     body.innerHTML = '';
@@ -1160,10 +1166,38 @@
   function closeRecents() { $('#recents').classList.remove('on'); }
 
   // ---------------------------------------------------------------- navigation keys
+  // Lesson first: during a lesson the bottom keys are hidden (a thin handle remains). Touching the handle or
+  // swiping up from the bottom edge shows them for a few seconds. Outside lessons they are always shown.
+  function navAuto() {
+    const home = (S.device && S.device.home) || {};
+    return home.hideNavInClass !== false && !!S.seg && S.seg.type === 'class';
+  }
+  function updateNav() {
+    const app = $('#app');
+    const on = navAuto();
+    if (app.classList.contains('nav-auto') === on) return;
+    app.classList.toggle('nav-auto', on);
+    if (!on) { app.classList.remove('nav-show'); clearTimeout(S.navT); }
+  }
+  function showNavTransient() {
+    if (!navAuto()) return;
+    $('#app').classList.add('nav-show');
+    hideNavLater(4000);
+  }
+  function hideNavLater(ms) {
+    clearTimeout(S.navT);
+    S.navT = setTimeout(() => $('#app').classList.remove('nav-show'), ms);
+  }
+  // automatic notices (USB plugged in, updates ...) stay silent during a lesson
+  function quietNow() { return !!S.seg && S.seg.type === 'class'; }
+
   function renderNavKeys() {
     const el = $('#navkeys');
     el.innerHTML = '<button data-nav="back" aria-label="뒤로">' + ic('navBack') + '</button><button data-nav="home" aria-label="홈">' + ic('navHome') + '</button><button data-nav="recents" aria-label="최근 앱">' + ic('navRecents') + '</button>';
-    C.$$('[data-nav]', el).forEach((b) => { b.onclick = () => navKey(b.dataset.nav); });
+    C.$$('[data-nav]', el).forEach((b) => { b.onclick = () => { navKey(b.dataset.nav); if (navAuto()) hideNavLater(900); }; });
+    el.addEventListener('pointerdown', () => { if (navAuto()) hideNavLater(4000); });
+    const zone = $('#nav-zone');
+    zone.addEventListener('pointerdown', (e) => { e.preventDefault(); showNavTransient(); });
   }
   function navKey(k) {
     if (k === 'back') {
@@ -1291,6 +1325,7 @@
     C.$$('[data-go]', main).forEach((b) => { b.onclick = () => { FS.path = b.dataset.go; renderDirList(roots); }; });
   }
   function onStorage(d) {
+    if (quietNow()) { if (S.panel === 'files') { if (d.mounted) { FS.preferUsb = true; FS.path = null; } renderFiles(); } return; }
     if (d.mounted) {
       toast('USB 메모리가 연결되었습니다. 누르면 파일 앱에서 엽니다.', 6000);
       $('#toast').onclick = () => { $('#toast').classList.remove('on'); FS.preferUsb = true; FS.path = null; openApp('files'); };
@@ -1298,21 +1333,86 @@
     if (S.panel === 'files') { if (d.mounted) { FS.preferUsb = true; FS.path = null; } renderFiles(); }
   }
 
+  // ---------------------------------------------------------------- 확대 · 축소 (핀치 + 버튼)
+  // The scrolling element's --z variable scales text, pictures and document pages (see .zm / .doc-page in the CSS).
+  const ZM = { sc: null, z: 1, p0: null, tap: 0 };
+  function zoomTo(nz, fx, fy) {
+    const sc = ZM.sc;
+    if (!sc) return;
+    nz = Math.max(1, Math.min(4, nz));
+    if (Math.abs(nz - ZM.z) < 0.001) return;
+    const r = nz / ZM.z;
+    const px = fx == null ? sc.clientWidth / 2 : fx, py = fy == null ? sc.clientHeight / 2 : fy;
+    sc.style.setProperty('--z', nz.toFixed(3));
+    sc.scrollLeft = (sc.scrollLeft + px) * r - px; // keep the point under the fingers where it was
+    sc.scrollTop = (sc.scrollTop + py) * r - py;
+    ZM.z = nz;
+    const pct = $('#zm-pct');
+    if (pct) pct.textContent = Math.round(nz * 100) + '%';
+  }
+  function removeZoomCtl() {
+    const c = $('#zoom-ctl');
+    if (c) c.remove();
+    if (ZM.sc) ZM.sc.style.removeProperty('--z');
+    ZM.sc = null;
+    ZM.z = 1;
+    ZM.p0 = null;
+  }
+  function enableZoom(sc) {
+    removeZoomCtl();
+    ZM.sc = sc;
+    ZM.z = 1;
+    sc.style.setProperty('--z', '1');
+    const ctl = document.createElement('div');
+    ctl.id = 'zoom-ctl';
+    ctl.className = 'zoom-ctl';
+    ctl.innerHTML = '<button data-zm="-1" aria-label="축소">' + ic('minus') + '</button><button class="pct" data-zm="0" id="zm-pct" aria-label="원래 크기">100%</button><button data-zm="1" aria-label="확대">' + ic('plus') + '</button>';
+    $('#panel').appendChild(ctl);
+    C.$$('[data-zm]', ctl).forEach((b) => {
+      b.onclick = () => { const k = Number(b.dataset.zm); zoomTo(k === 0 ? 1 : ZM.z * (k > 0 ? 1.4 : 1 / 1.4)); };
+    });
+    if (sc._zmBound) return;
+    sc._zmBound = true;
+    const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    sc.addEventListener('touchstart', (e) => {
+      if (ZM.sc !== sc) return;
+      if (e.touches.length === 2) {
+        ZM.p0 = { d: dist(e.touches), z: ZM.z };
+        sc.style.overflow = 'hidden'; // no scrolling while pinching
+      } else if (e.touches.length === 1) {
+        // double tap: 2.2x, again: back to 1x
+        const now = Date.now();
+        const t = e.touches[0];
+        if (now - ZM.tap < 320 && !e.target.closest('button, a, input, select')) {
+          const r = sc.getBoundingClientRect();
+          zoomTo(ZM.z > 1.05 ? 1 : 2.2, t.clientX - r.left, t.clientY - r.top);
+          ZM.tap = 0;
+        } else ZM.tap = now;
+      }
+    }, { passive: true });
+    sc.addEventListener('touchmove', (e) => {
+      if (ZM.sc !== sc || !ZM.p0 || e.touches.length !== 2) return;
+      e.preventDefault();
+      const r = sc.getBoundingClientRect();
+      zoomTo(ZM.p0.z * dist(e.touches) / ZM.p0.d, (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left, (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top);
+    }, { passive: false });
+    const endPinch = (e) => { if (ZM.p0 && e.touches.length < 2) { ZM.p0 = null; sc.style.overflow = ''; } };
+    sc.addEventListener('touchend', endPinch, { passive: true });
+    sc.addEventListener('touchcancel', endPinch, { passive: true });
+  }
+
   // ---------------------------------------------------------------- 문서 보기 (PDF · HWP · 오피스)
   // The school server turns the file into page pictures; a PDF can also be drawn by the board itself.
   const DOC_EXT = /\.(pdf|hwp|hwpx|docx?|pptx?|xlsx?|odt|odp|ods)$/i;
-  const DOC = { zoom: 1 };
   async function renderDocApp() {
     const o = S.panelOpts;
     const body = $('#p-body');
     const isPdf = /\.pdf$/i.test(o.name || '');
     body.innerHTML = '<div class="doc"><div class="doc-bar"><b class="doc-nm">' + esc(o.name || '문서') + '</b><span class="doc-pg" id="doc-pg"></span>' +
-      '<button class="bb-t" data-z="-1">' + ic('minus') + '</button><button class="bb-t" data-z="0">맞춤</button><button class="bb-t" data-z="1">' + ic('plus') + '</button>' +
       '<button class="bb-t" id="doc-ext">다른 앱으로 열기</button><button class="bb-t" id="doc-x">' + ic('x') + '</button></div>' +
       '<div class="doc-pages" id="doc-pages"><div class="doc-wait"><span class="dots-loader"><i></i><i></i><i></i></span><span id="doc-step">문서를 여는 중</span></div></div></div>';
     $('#doc-x').onclick = () => navKey('back');
     $('#doc-ext').onclick = () => { if (o.path) native('fsOpen', o.path); else native('openWebFile', o.url, o.name); };
-    C.$$('[data-z]', body).forEach((b) => { b.onclick = () => { const z = Number(b.dataset.z); DOC.zoom = z === 0 ? 1 : Math.max(1, Math.min(3, DOC.zoom + z * 0.5)); applyZoom(); }; });
     const step = (t) => { const el = $('#doc-step'); if (el) el.textContent = t; };
     const alive = () => S.panel === 'doc' && S.panelOpts === o;
     let pages = 0, src = null, err = null;
@@ -1327,7 +1427,6 @@
       $('#doc-retry').onclick = () => renderDocApp();
       return;
     }
-    DOC.zoom = 1;
     box.innerHTML = Array.from({ length: pages }, (_, i) => '<div class="doc-page"><img loading="lazy" decoding="async" src="' + src(i + 1) + '" alt="' + (i + 1) + '쪽"></div>').join('');
     const pg = $('#doc-pg');
     const upd = () => {
@@ -1338,7 +1437,7 @@
     };
     box.onscroll = upd;
     upd();
-    applyZoom();
+    enableZoom(box);
   }
   // attachment pages inside the post (가정통신문 · 공지사항)
   async function inlineDoc(f, o) {
@@ -1388,10 +1487,6 @@
       const d = await C.get('/api/local/pdf/info?url=' + encodeURIComponent(o.url) + '&name=' + encodeURIComponent(o.name));
       return { pages: d.pages, src: (p) => '/api/local/pdf/page?key=' + d.key + '&p=' + p };
     }
-  }
-  function applyZoom() {
-    const box = $('#doc-pages');
-    if (box) box.style.setProperty('--z', DOC.zoom);
   }
 
   // ---------------------------------------------------------------- 외부 입력 (HDMI)
@@ -1489,6 +1584,7 @@
         '<div class="set-row" style="display:block"><div class="lb" style="margin-bottom:.8rem"><b>추가할 앱</b><span>누르면 하단에 들어갑니다. 홈 화면에서 아이콘을 길게 눌러도 됩니다.</span></div><div class="pick-grid">' +
         all.filter((id) => dock.indexOf(id) < 0).map((id) => '<button class="pick" data-add="' + esc(id) + '">' + tileFor(id) + '<span>' + esc(appLabel(id)) + '</span></button>').join('') + '</div></div>' +
         row('기본값으로', '시간표, 급식, 가정통신문, 칠판, 학급 알림', '<button class="btn sm" id="dock-reset">되돌리기</button>')) +
+      group('수업 중', row('하단바 숨기기', '수업이 진행되는 동안 ◁ ○ □ 버튼을 안드로이드처럼 숨깁니다. 화면 맨 아래를 쓸어 올리거나 아래쪽 손잡이를 누르면 잠깐 나타납니다. 수업이 아닐 때는 항상 보입니다', sw('hn-on', h.hideNavInClass !== false))) +
       group('수업 시작 전 알림', row('알림 켜기', '수업 시작 10초 전에 교시와 과목을 화면에 띄웁니다. 수업이 끝날 때는 알리지 않습니다', sw('pc-on', h.preClass !== false)) +
         row('알림음', '', sw('pc-snd', h.preClassSound !== false))) +
       group('아침 자동 재시작', row('켜기', '오래 켜 둔 화면이 느려지지 않도록 매일 아침 한 번 앱을 다시 켭니다 (수업 중에는 하지 않음)', sw('mr-on', h.morningRestart !== false)) +
@@ -1501,6 +1597,7 @@
     C.$$('[data-rm]', c).forEach((b) => { b.onclick = () => { const n = dock.slice(); n.splice(Number(b.dataset.rm), 1); set(n); }; });
     C.$$('[data-add]', c).forEach((b) => { b.onclick = () => { if (dock.length >= 6) { toast('하단에는 앱을 6개까지 둘 수 있습니다'); return; } set(dock.concat([b.dataset.add])); }; });
     $('#dock-reset').onclick = () => set(DEFAULT_DOCK.slice());
+    $('#hn-on').onchange = (e) => saveHome({ hideNavInClass: e.target.checked });
     $('#pc-on').onchange = (e) => saveHome({ preClass: e.target.checked });
     $('#mr-on').onchange = (e) => saveHome({ morningRestart: e.target.checked });
     C.$$('[data-mr]', c).forEach((b) => { b.onclick = () => saveHome({ restartAt: b.dataset.mr }).then(() => renderSettings()); });
