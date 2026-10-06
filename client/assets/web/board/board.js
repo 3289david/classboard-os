@@ -1168,9 +1168,15 @@
   // ---------------------------------------------------------------- navigation keys
   // Lesson first: during a lesson the bottom keys are hidden (a thin handle remains). Touching the handle or
   // swiping up from the bottom edge shows them for a few seconds. Outside lessons they are always shown.
+  // 항상 숨김 (default) / 수업 중만 / 항상 표시
+  function navMode() {
+    const h = (S.device && S.device.home) || {};
+    return h.navHide || (h.hideNavInClass === false ? 'never' : 'always');
+  }
   function navAuto() {
     const home = (S.device && S.device.home) || {};
-    return home.hideNavInClass !== false && !!S.seg && S.seg.type === 'class';
+    const mode = navMode();
+    return mode === 'always' || (mode === 'class' && !!S.seg && S.seg.type === 'class');
   }
   function updateNav() {
     const app = $('#app');
@@ -1339,7 +1345,7 @@
   function zoomTo(nz, fx, fy) {
     const sc = ZM.sc;
     if (!sc) return;
-    nz = Math.max(1, Math.min(4, nz));
+    nz = Math.max(0.4, Math.min(4, nz)); // 40% (zoomed out) to 400%
     if (Math.abs(nz - ZM.z) < 0.001) return;
     const r = nz / ZM.z;
     const px = fx == null ? sc.clientWidth / 2 : fx, py = fy == null ? sc.clientHeight / 2 : fy;
@@ -1380,12 +1386,12 @@
         ZM.p0 = { d: dist(e.touches), z: ZM.z };
         sc.style.overflow = 'hidden'; // no scrolling while pinching
       } else if (e.touches.length === 1) {
-        // double tap: 2.2x, again: back to 1x
+        // double tap: 2.2x, again (or from zoomed out): back to 100%
         const now = Date.now();
         const t = e.touches[0];
         if (now - ZM.tap < 320 && !e.target.closest('button, a, input, select')) {
           const r = sc.getBoundingClientRect();
-          zoomTo(ZM.z > 1.05 ? 1 : 2.2, t.clientX - r.left, t.clientY - r.top);
+          zoomTo(Math.abs(ZM.z - 1) > 0.05 ? 1 : 2.2, t.clientX - r.left, t.clientY - r.top);
           ZM.tap = 0;
         } else ZM.tap = now;
       }
@@ -1584,7 +1590,8 @@
         '<div class="set-row" style="display:block"><div class="lb" style="margin-bottom:.8rem"><b>추가할 앱</b><span>누르면 하단에 들어갑니다. 홈 화면에서 아이콘을 길게 눌러도 됩니다.</span></div><div class="pick-grid">' +
         all.filter((id) => dock.indexOf(id) < 0).map((id) => '<button class="pick" data-add="' + esc(id) + '">' + tileFor(id) + '<span>' + esc(appLabel(id)) + '</span></button>').join('') + '</div></div>' +
         row('기본값으로', '시간표, 급식, 가정통신문, 칠판, 학급 알림', '<button class="btn sm" id="dock-reset">되돌리기</button>')) +
-      group('수업 중', row('하단바 숨기기', '수업이 진행되는 동안 ◁ ○ □ 버튼을 안드로이드처럼 숨깁니다. 화면 맨 아래를 쓸어 올리거나 아래쪽 손잡이를 누르면 잠깐 나타납니다. 수업이 아닐 때는 항상 보입니다', sw('hn-on', h.hideNavInClass !== false))) +
+      group('하단바', row('◁ ○ □ 버튼', '안드로이드 전체화면처럼 숨깁니다. 화면 맨 아래를 쓸어 올리거나 아래쪽 손잡이를 누르면 4초 동안 나타납니다',
+        '<div class="tabs">' + [['always', '항상 숨김'], ['class', '수업 중만'], ['never', '항상 표시']].map((x) => '<button data-nav-mode="' + x[0] + '" class="' + (navMode() === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>')) +
       group('수업 시작 전 알림', row('알림 켜기', '수업 시작 10초 전에 교시와 과목을 화면에 띄웁니다. 수업이 끝날 때는 알리지 않습니다', sw('pc-on', h.preClass !== false)) +
         row('알림음', '', sw('pc-snd', h.preClassSound !== false))) +
       group('아침 자동 재시작', row('켜기', '오래 켜 둔 화면이 느려지지 않도록 매일 아침 한 번 앱을 다시 켭니다 (수업 중에는 하지 않음)', sw('mr-on', h.morningRestart !== false)) +
@@ -1597,7 +1604,7 @@
     C.$$('[data-rm]', c).forEach((b) => { b.onclick = () => { const n = dock.slice(); n.splice(Number(b.dataset.rm), 1); set(n); }; });
     C.$$('[data-add]', c).forEach((b) => { b.onclick = () => { if (dock.length >= 6) { toast('하단에는 앱을 6개까지 둘 수 있습니다'); return; } set(dock.concat([b.dataset.add])); }; });
     $('#dock-reset').onclick = () => set(DEFAULT_DOCK.slice());
-    $('#hn-on').onchange = (e) => saveHome({ hideNavInClass: e.target.checked });
+    C.$$('[data-nav-mode]', c).forEach((b) => { b.onclick = () => saveHome({ navHide: b.dataset.navMode }).then(() => renderSettings()); });
     $('#pc-on').onchange = (e) => saveHome({ preClass: e.target.checked });
     $('#mr-on').onchange = (e) => saveHome({ morningRestart: e.target.checked });
     C.$$('[data-mr]', c).forEach((b) => { b.onclick = () => saveHome({ restartAt: b.dataset.mr }).then(() => renderSettings()); });

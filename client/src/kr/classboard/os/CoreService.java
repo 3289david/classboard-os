@@ -508,7 +508,9 @@ public class CoreService extends Service {
 
     /** During a lesson the floating bar shrinks to a thin handle (설정 → 홈 화면 → 수업 중 하단바 숨기기). */
     private boolean compactNav() {
-        return inClass() && cfg.home().optBoolean("hideNavInClass", true);
+        JSONObject h = cfg.home();
+        String mode = h.optString("navHide", h.optBoolean("hideNavInClass", true) ? "always" : "never");
+        return "always".equals(mode) || ("class".equals(mode) && inClass());
     }
 
     public void onBoardResumed() {
