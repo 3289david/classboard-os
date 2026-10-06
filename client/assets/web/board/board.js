@@ -294,6 +294,7 @@
     if (S.view === v && $('#v-' + v).classList.contains('on')) return;
     S.view = v;
     C.$$('.view').forEach((el) => el.classList.toggle('on', el.id === 'v-' + v));
+    updateNav();
   }
   function tick(force) {
     const seg = computeSeg();
@@ -1065,6 +1066,7 @@
     const wasOpen = !!S.panel;
     S.panel = name;
     S.panelOpts = opts || {};
+    updateNav();
     $('#p-icon').innerHTML = svgFor(name);
     p.classList.toggle('full', !!a.full);
     $('#p-title').textContent = a.name;
@@ -1078,6 +1080,7 @@
     if (!S.panel) return;
     removeZoomCtl();
     S.panel = null;
+    updateNav();
     const p = $('#panel');
     p.classList.add('closing');
     clearTimeout(closePanel._t);
@@ -1157,13 +1160,14 @@
     if (!cards) cards = '<div class="empty" style="color:#a9b4c3">최근에 연 앱이 없습니다</div>';
     el.innerHTML = '<h2>최근 앱</h2><div class="cards">' + cards + '</div>' + (N ? '<button class="btn" id="rc-sys">' + ic('apps') + '안드로이드 최근 앱</button>' : '');
     el.classList.add('on');
+    updateNav();
     C.$$('[data-rapp]', el).forEach((b) => { b.onclick = (ev) => openApp(b.dataset.rapp, ev.currentTarget); });
     C.$$('[data-rpkg]', el).forEach((b) => { b.onclick = () => { closeRecents(); native('launch', b.dataset.rpkg); }; });
     const sys = $('#rc-sys');
     if (sys) sys.onclick = () => { closeRecents(); const r = native('nav', 'recents'); if (r && r.noA11y) toast('설정 앱 → 권한에서 접근성 서비스를 켜면 안드로이드 최근 앱을 열 수 있습니다', 5000); };
     el.onclick = (ev) => { if (ev.target === el) closeRecents(); };
   }
-  function closeRecents() { $('#recents').classList.remove('on'); }
+  function closeRecents() { $('#recents').classList.remove('on'); updateNav(); }
 
   // ---------------------------------------------------------------- navigation keys
   // Lesson first: during a lesson the bottom keys are hidden (a thin handle remains). Touching the handle or
@@ -1174,9 +1178,12 @@
     return h.navHide || (h.hideNavInClass === false ? 'never' : 'always');
   }
   function navAuto() {
-    const home = (S.device && S.device.home) || {};
     const mode = navMode();
-    return mode === 'always' || (mode === 'class' && !!S.seg && S.seg.type === 'class');
+    if (mode === 'never') return false;
+    // the bar stays on the home screen (and on the recent-apps screen); it hides inside apps and documents
+    if ($('#recents').classList.contains('on')) return false;
+    if (S.view === 'home' && !S.panel) return false;
+    return mode === 'always' || (!!S.seg && S.seg.type === 'class');
   }
   function updateNav() {
     const app = $('#app');
@@ -1590,7 +1597,7 @@
         '<div class="set-row" style="display:block"><div class="lb" style="margin-bottom:.8rem"><b>추가할 앱</b><span>누르면 하단에 들어갑니다. 홈 화면에서 아이콘을 길게 눌러도 됩니다.</span></div><div class="pick-grid">' +
         all.filter((id) => dock.indexOf(id) < 0).map((id) => '<button class="pick" data-add="' + esc(id) + '">' + tileFor(id) + '<span>' + esc(appLabel(id)) + '</span></button>').join('') + '</div></div>' +
         row('기본값으로', '시간표, 급식, 가정통신문, 칠판, 학급 알림', '<button class="btn sm" id="dock-reset">되돌리기</button>')) +
-      group('하단바', row('◁ ○ □ 버튼', '안드로이드 전체화면처럼 숨깁니다. 화면 맨 아래를 쓸어 올리거나 아래쪽 손잡이를 누르면 4초 동안 나타납니다',
+      group('하단바', row('◁ ○ □ 버튼', '앱 안에서는 안드로이드 전체화면처럼 숨깁니다. 화면 맨 아래를 쓸어 올리거나 아래쪽 손잡이를 누르면 4초 동안 나타납니다. 홈 화면에서는 항상 보입니다',
         '<div class="tabs">' + [['always', '항상 숨김'], ['class', '수업 중만'], ['never', '항상 표시']].map((x) => '<button data-nav-mode="' + x[0] + '" class="' + (navMode() === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>')) +
       group('수업 시작 전 알림', row('알림 켜기', '수업 시작 10초 전에 교시와 과목을 화면에 띄웁니다. 수업이 끝날 때는 알리지 않습니다', sw('pc-on', h.preClass !== false)) +
         row('알림음', '', sw('pc-snd', h.preClassSound !== false))) +
